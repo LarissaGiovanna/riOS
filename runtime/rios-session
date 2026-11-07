@@ -1,0 +1,853 @@
+#!/usr/bin/env bash
+# =============================================================================
+# rios-session — daemon do kiosk riOS
+#
+# Monitora a porta USB via `adb devices` e, quando encontra um celular
+# autorizado e desbloqueado, prepara o Android e abre o DeX com o scrcpy.
+# Se o método principal falhar, cai automaticamente para os fallbacks:
+#
+#   A: scrcpy --new-display (display virtual — método preferido)
+#   B: adb shell settings put global overlay_display_devices + espelho
+#   C: espelho simples (scrcpy sem --new-display)
+#
+# Ao desconectar o cabo, limpa a sessão e volta para a tela de espera.
+#
+# Uso:
+#   rios-session [--config ARQUIVO] [--log-dir DIR] [--state-dir DIR]
+#                [--once] [--max-cycles N]
+#                [--dump-config] [--check-config] [--help] [--version]
+#
+# Variáveis de ambiente (sobrepõem os caminhos padrão):
+#   RIOS_CONFIG, RIOS_LOG_DIR, RIOS_STATE_DIR, RIOS_WAIT_SCREEN_DIR
+#
+# Configuração: /etc/rios/config   Logs: /var/log/rios/
+# =============================================================================
+set -euo pipefail
+
+SCRIPT_NAME="rios-session"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+
+readonly DEFAULT_CONFIG="/etc/rios/config"
+readonly DEFAULT_LOG_DIR="/var/log/rios"
+readonly DEFAULT_STATE_DIR="/run/rios"
+readonly DEFAULT_WAIT_SCREEN_DIR="${SCRIPT_DIR}/rios-wait-screen"
+
+CONFIG_FILE="${RIOS_CONFIG:-$DEFAULT_CONFIG}"
+LOG_DIR="${RIOS_LOG_DIR:-$DEFAULT_LOG_DIR}"
+STATE_DIR="${RIOS_STATE_DIR:-$DEFAULT_STATE_DIR}"
+WAIT_SCREEN_DIR="${RIOS_WAIT_SCREEN_DIR:-$DEFAULT_WAIT_SCREEN_DIR}"
+LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}.log"
+SCRCPY_LOG="${LOG_DIR}/scrcpy.log"
+
+# ---------------------------------------------------------------------------
+# Defaults de configuração (usados quando o arquivo não existe ou tem valor
+# inválido). Todos podem ser sobrescritos em /etc/rios/config.
+# ---------------------------------------------------------------------------
+METHOD="auto"
+RESOLUTION="auto"
+DPI="160"
+FPS="15"
+BITRATE="4M"
+VIDEO_CODEC="h264"
+AUDIO="off"
+RENDER_DRIVER="software"
+KEYBOARD="sdk"
+MOUSE="sdk"
+WINDOW_MODE="fullscreen"
+BLACKOUT_TIMEOUT="15"
+ADB_TIMEOUT="4"
+POLL_INTERVAL="2"
+SERIAL=""
+LOG_MAX_BYTES="1048576"
+LOG_KEEP="5"
+
+CONFIG_KEYS=(METHOD RESOLUTION DPI FPS BITRATE VIDEO_CODEC AUDIO RENDER_DRIVER
+             KEYBOARD MOUSE WINDOW_MODE BLACKOUT_TIMEOUT ADB_TIMEOUT
+             POLL_INTERVAL SERIAL LOG_MAX_BYTES LOG_KEEP)
+
+# ---------------------------------------------------------------------------
+# Estado de execução
+# ---------------------------------------------------------------------------
+STATE="IDLE"
+METHOD_USED=""
+DEVICE_STATE="none"
+DEVICE_SERIAL=""
+ANDROID_RELEASE=""
+ANDROID_SDK=""
+CURRENT_RESOLUTION="1024x600"
+SCRCPY_PID=""
+INIT_SYSTEM="runit"
+STARTED_AT=""
+CYCLES=0
+MAX_CYCLES=0
+LAST_WAIT_MESSAGE=""
+STATUS_MESSAGE="Conecte o celular Samsung por USB"
+QUIET_LOG=0
+DUMP_CONFIG=0
+CHECK_CONFIG=0
+CONFIG_ERRORS=0
+
+# ---------------------------------------------------------------------------
+# Funções de log
+# ---------------------------------------------------------------------------
+
+# Gira o arquivo de log quando ele passa de LOG_MAX_BYTES.
+rotate_log() {
+  [[ -n "${LOG_FILE:-}" && -f "$LOG_FILE" ]] || return 0
+  local size
+  size="$(stat -c %s "$LOG_FILE" 2>/dev/null || echo 0)"
+  (( size >= LOG_MAX_BYTES )) || return 0
+  local i
+  for (( i = LOG_KEEP - 1; i >= 1; i-- )); do
+    if [[ -f "${LOG_FILE}.${i}" ]]; then
+      mv -f "${LOG_FILE}.${i}" "${LOG_FILE}.$(( i + 1 ))" 2>/dev/null || true
+    fi
+  done
+  mv -f "$LOG_FILE" "${LOG_FILE}.1" 2>/dev/null || true
+}
+
+# Acrescenta uma linha ao arquivo de log (com rotação automática).
+append_log() {
+  local line="$1"
+  [[ -n "${LOG_FILE:-}" ]] || return 0
+  rotate_log || true
+  printf '%s\n' "$line" >>"$LOG_FILE" 2>/dev/null || true
+}
+
+# Escreve uma mensagem de log no arquivo, no stderr e (se houver systemd) no
+# journal. Nível: INFO, WARN ou ERROR.
+log() {
+  local level="$1"
+  shift
+  local msg ts line
+  ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  msg="$*"
+  line="${ts} [${level}] ${msg}"
+  if (( QUIET_LOG == 0 )); then
+    printf '%s\n' "$line" >&2 || true
+  fi
+  append_log "$line"
+  if [[ "$INIT_SYSTEM" == "systemd" ]] && command -v systemd-cat >/dev/null 2>&1; then
+    printf '%s\n' "$msg" | systemd-cat -t "$SCRIPT_NAME" -p info >/dev/null 2>&1 || true
+  fi
+}
+
+# Aviso: sempre visível no stderr, mesmo em modo silencioso (--dump-config).
+warn() {
+  local msg="$*"
+  if (( QUIET_LOG == 1 )); then
+    printf '%s: AVISO: %s\n' "$SCRIPT_NAME" "$msg" >&2 || true
+  fi
+  log WARN "$msg"
+}
+
+# ---------------------------------------------------------------------------
+# Configuração
+# ---------------------------------------------------------------------------
+
+# Valida um par chave/valor. Devolve 0 se aceitável, 1 se inválido.
+validate_config_value() {
+  local key="$1" value="$2"
+  case "$key" in
+    METHOD)      [[ "$value" =~ ^(auto|new-display|overlay|mirror)$ ]] ;;
+    RESOLUTION)  [[ "$value" == "auto" || "$value" =~ ^[0-9]{2,5}x[0-9]{2,5}$ ]] ;;
+    DPI)         [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 72 && 10#$value <= 640 )) ;;
+    FPS)         [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 1 && 10#$value <= 240 )) ;;
+    BITRATE)     [[ "$value" =~ ^[0-9]+[KkMmGg]?$ ]] ;;
+    VIDEO_CODEC) [[ "$value" =~ ^(h264|h265|av1)$ ]] ;;
+    AUDIO)       [[ "$value" =~ ^(on|off)$ ]] ;;
+    RENDER_DRIVER) [[ "$value" =~ ^(software|opengl)$ ]] ;;
+    KEYBOARD)    [[ "$value" =~ ^(sdk|uhid)$ ]] ;;
+    MOUSE)       [[ "$value" =~ ^(sdk|uhid)$ ]] ;;
+    WINDOW_MODE) [[ "$value" =~ ^(fullscreen|window)$ ]] ;;
+    BLACKOUT_TIMEOUT|ADB_TIMEOUT|POLL_INTERVAL)
+                 [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 1 && 10#$value <= 3600 )) ;;
+    SERIAL)      [[ "$value" =~ ^[A-Za-z0-9._:-]*$ ]] ;;
+    LOG_MAX_BYTES) [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 4096 )) ;;
+    LOG_KEEP)    [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 1 && 10#$value <= 20 )) ;;
+    *)           return 1 ;;
+  esac
+}
+
+# Lê /etc/rios/config (KEY=VALUE). Valores inválidos geram aviso e mantêm o
+# default; chaves desconhecidas também geram aviso. Arquivo ausente não é erro.
+load_config() {
+  CONFIG_ERRORS=0
+  if [[ ! -r "$CONFIG_FILE" ]]; then
+    warn "arquivo de configuração não encontrado em $CONFIG_FILE; usando padrões"
+    return 0
+  fi
+  local line key value lineno=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$(( lineno + 1 ))
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    if [[ ! "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+      warn "config: linha $lineno ignorada (formato inválido)"
+      continue
+    fi
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    value="${value%%#*}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    if [[ ! " ${CONFIG_KEYS[*]} " =~ [[:space:]]${key}[[:space:]] ]]; then
+      warn "config: chave desconhecida '$key' na linha $lineno (ignorada)"
+      continue
+    fi
+    if validate_config_value "$key" "$value"; then
+      printf -v "$key" '%s' "$value"
+    else
+      CONFIG_ERRORS=$(( CONFIG_ERRORS + 1 ))
+      warn "config: valor inválido para $key: '$value' (linha $lineno); usando padrão '${!key}'"
+    fi
+  done <"$CONFIG_FILE"
+}
+
+# Imprime a configuração efetiva (KEY=VALUE), útil para testes e depuração.
+dump_config() {
+  local key
+  for key in "${CONFIG_KEYS[@]}"; do
+    printf '%s=%s\n' "$key" "${!key}"
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Diretórios, init e status
+# ---------------------------------------------------------------------------
+
+# Garante diretórios de log/estado graváveis, com fallback para /tmp.
+setup_runtime_dirs() {
+  if ! mkdir -p "$LOG_DIR" 2>/dev/null || [[ ! -w "$LOG_DIR" ]]; then
+    LOG_DIR="${TMPDIR:-/tmp}/rios-log"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}.log"
+    SCRCPY_LOG="${LOG_DIR}/scrcpy.log"
+    warn "diretório de log padrão indisponível; usando $LOG_DIR"
+  fi
+  if ! mkdir -p "$STATE_DIR" 2>/dev/null || [[ ! -w "$STATE_DIR" ]]; then
+    STATE_DIR="${TMPDIR:-/tmp}/rios-state"
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
+    warn "diretório de estado padrão indisponível; usando $STATE_DIR"
+  fi
+}
+
+# Detecta o sistema de init: systemd se /run/systemd/system existir, senão runit.
+detect_init() {
+  if [[ -d /run/systemd/system ]]; then
+    INIT_SYSTEM="systemd"
+  else
+    INIT_SYSTEM="runit"
+  fi
+}
+
+# Grava o arquivo de status consumido por `rios-launch status`.
+status_write() {
+  mkdir -p "$STATE_DIR" 2>/dev/null || return 0
+  local tmp="${STATE_DIR}/.status.$$"
+  {
+    printf 'STATE=%s\n' "$STATE"
+    printf 'PID=%s\n' "$$"
+    printf 'INIT=%s\n' "$INIT_SYSTEM"
+    printf 'SERIAL=%s\n' "$DEVICE_SERIAL"
+    printf 'ANDROID=%s\n' "$ANDROID_RELEASE"
+    printf 'RESOLUTION=%s\n' "$CURRENT_RESOLUTION"
+    printf 'METHOD=%s\n' "$METHOD_USED"
+    printf 'SCRCPY_PID=%s\n' "$SCRCPY_PID"
+    printf 'STARTED_AT=%s\n' "$STARTED_AT"
+    printf 'MESSAGE=%s\n' "$STATUS_MESSAGE"
+    printf 'UPDATED=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+  } >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+  mv -f "$tmp" "${STATE_DIR}/status" 2>/dev/null || rm -f "$tmp"
+}
+
+# Muda de estado e registra a transição.
+set_state() {
+  STATE="$1"
+  shift || true
+  if (( $# > 0 )); then
+    log INFO "estado=$STATE — $*"
+  else
+    log INFO "estado=$STATE"
+  fi
+  status_write
+}
+
+# ---------------------------------------------------------------------------
+# Integração com adb
+# ---------------------------------------------------------------------------
+
+# Executa um comando com o timeout configurado em ADB_TIMEOUT.
+run_with_timeout() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$ADB_TIMEOUT" "$@"
+  else
+    "$@"
+  fi
+}
+
+# Chama o adb já com o serial (se conhecido) e o timeout configurado.
+adb_cmd() {
+  if [[ -n "$SERIAL" ]]; then
+    run_with_timeout adb -s "$SERIAL" "$@"
+  elif [[ -n "$DEVICE_SERIAL" ]]; then
+    run_with_timeout adb -s "$DEVICE_SERIAL" "$@"
+  else
+    run_with_timeout adb "$@"
+  fi
+}
+
+# Detecta o primeiro aparelho listado em `adb devices` e guarda o estado em
+# DEVICE_STATE (device|unauthorized|offline|none|noadb) e o serial em
+# DEVICE_SERIAL. Não usa subshell para não perder as variáveis globais.
+detect_device() {
+  DEVICE_STATE="none"
+  DEVICE_SERIAL=""
+  if ! command -v adb >/dev/null 2>&1; then
+    DEVICE_STATE="noadb"
+    return 0
+  fi
+  local out serial="" state=""
+  out="$(run_with_timeout adb devices 2>/dev/null || true)"
+  while IFS=$'\t ' read -r field1 field2 _rest; do
+    [[ -z "$field1" ]] && continue
+    [[ "$field1" == "List" ]] && continue
+    if [[ -n "$field2" ]]; then
+      serial="$field1"
+      state="$field2"
+      break
+    fi
+  done <<<"$out"
+  case "$state" in
+    device|unauthorized|offline)
+      DEVICE_STATE="$state"
+      DEVICE_SERIAL="$serial"
+      ;;
+    *)
+      DEVICE_STATE="none"
+      ;;
+  esac
+  return 0
+}
+
+# Lê a versão do Android (release e SDK) do aparelho conectado.
+get_android_version() {
+  ANDROID_RELEASE="$(adb_cmd shell getprop ro.build.version.release 2>/dev/null | tr -d '\r' | head -n1 || true)"
+  ANDROID_SDK="$(adb_cmd shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r' | head -n1 || true)"
+}
+
+# Verifica se o Android é 15 ou superior (release >= 15 ou SDK >= 35).
+android_is_supported() {
+  local release="${ANDROID_RELEASE%%.*}"
+  if [[ "$release" =~ ^[0-9]+$ ]] && (( 10#$release >= 15 )); then
+    return 0
+  fi
+  if [[ "$ANDROID_SDK" =~ ^[0-9]+$ ]] && (( 10#$ANDROID_SDK >= 35 )); then
+    return 0
+  fi
+  return 1
+}
+
+# Detecta se o celular está bloqueado (DeX não sobe com a tela travada).
+is_device_locked() {
+  local out
+  out="$(adb_cmd shell dumpsys window 2>/dev/null | tr -d '\r' || true)"
+  [[ -n "$out" ]] || return 1
+  grep -Eq 'mDreamingLockscreen=true|mShowingLockscreen=true|mKeyguardShowing=true|isStatusBarKeyguard=true' <<<"$out"
+}
+
+# Aplica os três settings globais que habilitam janelas livres no Android.
+apply_android_settings() {
+  local key rc=0
+  for key in enable_freeform_support force_desktop_mode_on_external_displays enable_non_resizable_multi_window; do
+    if adb_cmd shell settings put global "$key" 1 >/dev/null 2>&1; then
+      log INFO "setting global aplicado: $key=1"
+    else
+      warn "falha ao aplicar setting global $key"
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
+# ---------------------------------------------------------------------------
+# Resolução e tela de espera
+# ---------------------------------------------------------------------------
+
+# Resolve a resolução da sessão: usa RESOLUTION do config ou a tela real via
+# xrandr; se nada funcionar, cai para 1024x600.
+resolve_resolution() {
+  if [[ "$RESOLUTION" != "auto" ]]; then
+    CURRENT_RESOLUTION="$RESOLUTION"
+    return 0
+  fi
+  local res=""
+  if command -v xrandr >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+    res="$(xrandr --current 2>/dev/null | awk '/ connected/ {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^[0-9]+x[0-9]+/) { sub(/\+.*/, "", $i); print $i; exit }
+      }
+    }' || true)"
+  fi
+  if [[ ! "$res" =~ ^[0-9]+x[0-9]+$ ]]; then
+    res="1024x600"
+  fi
+  CURRENT_RESOLUTION="$res"
+}
+
+# Exibe uma notificação na sessão gráfica, quando possível.
+notify_user() {
+  local msg="$1"
+  if command -v notify-send >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+    notify-send -a riOS -u normal "riOS" "$msg" >/dev/null 2>&1 || true
+  fi
+  if command -v xsetroot >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+    xsetroot -name "riOS — $msg" >/dev/null 2>&1 || true
+  fi
+}
+
+# Mostra a tela de espera com a mensagem indicada. O setup.sh só é chamado
+# quando a mensagem muda, para não regenerar o papel de parede a cada poll.
+show_wait_screen() {
+  local msg="$1"
+  STATUS_MESSAGE="$msg"
+  printf '%s\n' "$msg" >"${STATE_DIR}/wait-message" 2>/dev/null || true
+  if [[ "$msg" == "$LAST_WAIT_MESSAGE" ]]; then
+    status_write
+    return 0
+  fi
+  LAST_WAIT_MESSAGE="$msg"
+  log INFO "tela de espera: $msg"
+  if [[ -x "${WAIT_SCREEN_DIR}/setup.sh" ]]; then
+    RIOS_WAIT_MESSAGE="$msg" RIOS_STATE_DIR="$STATE_DIR" \
+      "${WAIT_SCREEN_DIR}/setup.sh" --apply >/dev/null 2>&1 || true
+  fi
+  notify_user "$msg"
+  status_write
+}
+
+# ---------------------------------------------------------------------------
+# Preparação do aparelho (estado PREPARING)
+# ---------------------------------------------------------------------------
+
+# Valida o Android, aplica os settings globais e resolve a resolução.
+prepare_device() {
+  set_state PREPARING "validando o aparelho e aplicando settings"
+  get_android_version
+  log INFO "aparelho $DEVICE_SERIAL — Android ${ANDROID_RELEASE:-desconhecido} (SDK ${ANDROID_SDK:-desconhecido})"
+  if ! android_is_supported; then
+    warn "Android ${ANDROID_RELEASE:-desconhecido} < 15; o DeX em display virtual exige Android 15+"
+    show_wait_screen "Atualize o Android para a versão 15 ou superior"
+    return 1
+  fi
+  resolve_resolution
+  log INFO "resolução da sessão: ${CURRENT_RESOLUTION} @ ${DPI} DPI"
+  if ! apply_android_settings; then
+    warn "alguns settings globais falharam (seguindo mesmo assim)"
+  fi
+  status_write
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Controle do scrcpy e sessão (estado RUNNING)
+# ---------------------------------------------------------------------------
+
+# Verifica se um PID ainda está vivo (ignora processos zumbis).
+is_process_alive() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  if [[ -r "/proc/$pid/stat" ]]; then
+    local pstate
+    pstate="$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)"
+    [[ "$pstate" != "Z" ]] || return 1
+  fi
+  return 0
+}
+
+# Inicia o scrcpy em segundo plano e guarda o PID em SCRCPY_PID.
+start_scrcpy() {
+  local -a cmd=(scrcpy)
+  if [[ -n "$SERIAL" ]]; then
+    cmd+=(-s "$SERIAL")
+  elif [[ -n "$DEVICE_SERIAL" ]]; then
+    cmd+=(-s "$DEVICE_SERIAL")
+  fi
+  cmd+=("$@")
+  log INFO "executando: ${cmd[*]}"
+  if ! : >>"$SCRCPY_LOG" 2>/dev/null; then
+    SCRCPY_LOG="/dev/null"
+  fi
+  "${cmd[@]}" >>"$SCRCPY_LOG" 2>&1 &
+  SCRCPY_PID=$!
+  status_write
+  return 0
+}
+
+# Encerra o scrcpy com TERM e, se necessário, KILL.
+stop_scrcpy() {
+  local pid="${SCRCPY_PID:-}"
+  [[ -n "$pid" ]] || return 0
+  if is_process_alive "$pid"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    local i=0
+    while (( i < 10 )) && is_process_alive "$pid"; do
+      sleep 0.2
+      i=$(( i + 1 ))
+    done
+    if is_process_alive "$pid"; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+  wait "$pid" 2>/dev/null || true
+  SCRCPY_PID=""
+  status_write
+}
+
+# Espera BLACKOUT_TIMEOUT segundos observando o scrcpy. Devolve 1 se o
+# processo morrer antes (falha do método); 0 se a janela continuar viva.
+watchdog() {
+  local pid="$1" waited=0
+  while (( waited < BLACKOUT_TIMEOUT )); do
+    is_process_alive "$pid" || return 1
+    sleep 1
+    waited=$(( waited + 1 ))
+  done
+  is_process_alive "$pid"
+}
+
+# Monta os argumentos comuns de espelho (fallbacks B e C).
+build_mirror_args() {
+  MIRROR_ARGS=(--video-codec="$VIDEO_CODEC" --video-bit-rate="$BITRATE"
+               --max-fps="$FPS" --render-driver="$RENDER_DRIVER"
+               --turn-screen-off --keep-active
+               --mouse="$MOUSE" --keyboard="$KEYBOARD")
+  if [[ "$AUDIO" == "off" ]]; then
+    MIRROR_ARGS+=(--no-audio)
+  fi
+  if [[ "$WINDOW_MODE" == "fullscreen" ]]; then
+    MIRROR_ARGS+=(--fullscreen)
+  fi
+}
+
+# Vigia a sessão já estabelecida: termina quando o celular desconecta ou o
+# scrcpy encerra. Enquanto o celular estiver bloqueado, insiste na mensagem.
+monitor_session() {
+  local pid="$1"
+  while is_process_alive "$pid"; do
+    detect_device
+    if [[ "$DEVICE_STATE" != "device" ]]; then
+      log INFO "aparelho desconectado (estado=$DEVICE_STATE)"
+      return 0
+    fi
+    if is_device_locked; then
+      log WARN "celular bloqueado — desbloqueie o celular"
+      show_wait_screen "Desbloqueie o celular"
+    fi
+    sleep "$POLL_INTERVAL"
+  done
+  log INFO "scrcpy encerrou (PID $pid)"
+  return 0
+}
+
+# Método A: display virtual via scrcpy --new-display.
+run_method_a() {
+  METHOD_USED="A"
+  resolve_resolution
+  set_state RUNNING "método A (display virtual scrcpy --new-display)"
+  local -a args=(--new-display="${CURRENT_RESOLUTION}/${DPI}"
+                 --video-codec="$VIDEO_CODEC" --video-bit-rate="$BITRATE"
+                 --max-fps="$FPS" --render-driver="$RENDER_DRIVER"
+                 --turn-screen-off --keep-active
+                 --mouse="$MOUSE" --keyboard="$KEYBOARD")
+  if [[ "$AUDIO" == "off" ]]; then
+    args+=(--no-audio)
+  fi
+  if [[ "$WINDOW_MODE" == "fullscreen" ]]; then
+    args+=(--fullscreen)
+  fi
+  start_scrcpy "${args[@]}"
+  if ! watchdog "$SCRCPY_PID"; then
+    warn "método A não produziu imagem em ${BLACKOUT_TIMEOUT}s"
+    stop_scrcpy || true
+    return 1
+  fi
+  monitor_session "$SCRCPY_PID"
+  return 0
+}
+
+# Fallback B: cria um display virtual via overlay_display_devices e espelha.
+run_method_b() {
+  METHOD_USED="B"
+  set_state FALLBACK_B "overlay_display_devices ${CURRENT_RESOLUTION}/${DPI}"
+  log INFO "aplicando overlay_display_devices ${CURRENT_RESOLUTION}/${DPI}"
+  if ! adb_cmd shell settings put global overlay_display_devices \
+        "${CURRENT_RESOLUTION}/${DPI}" >/dev/null 2>&1; then
+    warn "fallback B: não foi possível aplicar overlay_display_devices"
+    return 1
+  fi
+  build_mirror_args
+  start_scrcpy "${MIRROR_ARGS[@]}"
+  if ! watchdog "$SCRCPY_PID"; then
+    warn "fallback B não produziu imagem em ${BLACKOUT_TIMEOUT}s"
+    stop_scrcpy || true
+    return 1
+  fi
+  set_state RUNNING "fallback B ativo (overlay + espelho)"
+  monitor_session "$SCRCPY_PID"
+  return 0
+}
+
+# Fallback C: espelho simples, sem display virtual e sem overlay.
+run_method_c() {
+  METHOD_USED="C"
+  set_state FALLBACK_C "espelho simples (sem --new-display)"
+  adb_cmd shell settings delete global overlay_display_devices >/dev/null 2>&1 || true
+  build_mirror_args
+  start_scrcpy "${MIRROR_ARGS[@]}"
+  if ! watchdog "$SCRCPY_PID"; then
+    warn "fallback C não produziu imagem em ${BLACKOUT_TIMEOUT}s"
+    stop_scrcpy || true
+    return 1
+  fi
+  set_state RUNNING "fallback C ativo (espelho simples)"
+  monitor_session "$SCRCPY_PID"
+  return 0
+}
+
+# Executa a sessão conforme METHOD, com a cadeia A → B → C quando for auto.
+run_session() {
+  case "$METHOD" in
+    new-display) run_method_a; return $? ;;
+    overlay)     run_method_b; return $? ;;
+    mirror)      run_method_c; return $? ;;
+    auto)        ;;
+    *)           warn "METHOD inválido '$METHOD'; usando auto" ;;
+  esac
+  if run_method_a; then
+    return 0
+  fi
+  warn "método A falhou; caindo para o fallback B"
+  stop_scrcpy || true
+  if run_method_b; then
+    return 0
+  fi
+  warn "fallback B falhou; caindo para o fallback C"
+  stop_scrcpy || true
+  if run_method_c; then
+    return 0
+  fi
+  warn "fallback C também falhou; voltando para a tela de espera"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Limpeza e loop principal
+# ---------------------------------------------------------------------------
+
+# Encerra o scrcpy, remove o overlay e devolve o daemon ao estado IDLE.
+cleanup() {
+  log INFO "cleanup: encerrando scrcpy e removendo overlay_display_devices"
+  stop_scrcpy || true
+  if [[ -n "$DEVICE_SERIAL" ]]; then
+    adb_cmd shell settings delete global overlay_display_devices >/dev/null 2>&1 || true
+  fi
+  STATE="IDLE"
+  METHOD_USED=""
+  DEVICE_STATE="none"
+  DEVICE_SERIAL=""
+  ANDROID_RELEASE=""
+  ANDROID_SDK=""
+  CURRENT_RESOLUTION="1024x600"
+  LAST_WAIT_MESSAGE=""
+  STATUS_MESSAGE="Conecte o celular Samsung por USB"
+  status_write
+  log INFO "cleanup concluído — voltando para IDLE"
+}
+
+# Aguarda um aparelho autorizado e desbloqueado. Atualiza a tela de espera
+# conforme o estado (sem cabo, não autorizado, offline, bloqueado).
+wait_for_device() {
+  local msg
+  while :; do
+    if (( MAX_CYCLES > 0 && CYCLES >= MAX_CYCLES )); then
+      return 1
+    fi
+    detect_device
+    case "$DEVICE_STATE" in
+      device)
+        if is_device_locked; then
+          msg="Desbloqueie o celular"
+        else
+          return 0
+        fi
+        ;;
+      unauthorized)
+        msg="Autorize a depuração USB no celular"
+        ;;
+      offline)
+        msg="Celular offline — reconecte o cabo USB"
+        ;;
+      noadb)
+        msg="adb não encontrado — instale o pacote android-tools/adb"
+        ;;
+      *)
+        msg="Conecte o celular Samsung por USB"
+        ;;
+    esac
+    show_wait_screen "$msg"
+    sleep "$POLL_INTERVAL"
+  done
+}
+
+# Loop principal: IDLE → PREPARING → RUNNING/fallbacks → cleanup → IDLE.
+main_loop() {
+  while :; do
+    if (( MAX_CYCLES > 0 && CYCLES >= MAX_CYCLES )); then
+      break
+    fi
+    set_state IDLE "aguardando celular"
+    show_wait_screen "Conecte o celular Samsung por USB"
+    if ! wait_for_device; then
+      break
+    fi
+    if prepare_device; then
+      run_session || true
+      cleanup
+      CYCLES=$(( CYCLES + 1 ))
+    else
+      sleep "$POLL_INTERVAL"
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Interface de linha de comando
+# ---------------------------------------------------------------------------
+
+# Mostra o texto de ajuda.
+usage() {
+  cat <<'USAGE'
+rios-session — daemon do kiosk riOS
+
+Uso:
+  rios-session [opções]
+
+Opções:
+  -c, --config ARQUIVO   arquivo KEY=VALUE (padrão: /etc/rios/config)
+      --log-dir DIR      diretório de logs (padrão: /var/log/rios)
+      --state-dir DIR    diretório de estado (padrão: /run/rios)
+      --once             executa um único ciclo e encerra
+      --max-cycles N     encerra após N ciclos (0 = infinito, padrão)
+      --dump-config      imprime a configuração efetiva e encerra
+      --check-config     valida a configuração e encerra
+  -h, --help             mostra esta ajuda
+      --version          mostra a versão
+
+Variáveis de ambiente: RIOS_CONFIG, RIOS_LOG_DIR, RIOS_STATE_DIR,
+RIOS_WAIT_SCREEN_DIR.
+USAGE
+}
+
+# Processa os argumentos de linha de comando.
+parse_args() {
+  while (( $# > 0 )); do
+    case "$1" in
+      -c|--config)
+        CONFIG_FILE="${2:?--config exige um arquivo}"
+        shift 2
+        ;;
+      --log-dir)
+        LOG_DIR="${2:?--log-dir exige um diretório}"
+        shift 2
+        ;;
+      --state-dir)
+        STATE_DIR="${2:?--state-dir exige um diretório}"
+        shift 2
+        ;;
+      --once)
+        MAX_CYCLES=1
+        shift
+        ;;
+      --max-cycles)
+        MAX_CYCLES="${2:?--max-cycles exige um número}"
+        shift 2
+        ;;
+      --dump-config)
+        DUMP_CONFIG=1
+        shift
+        ;;
+      --check-config)
+        CHECK_CONFIG=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      --version)
+        printf '%s 1.0.0\n' "$SCRIPT_NAME"
+        exit 0
+        ;;
+      *)
+        warn "argumento desconhecido: $1"
+        usage >&2
+        exit 2
+        ;;
+    esac
+  done
+  if [[ ! "$MAX_CYCLES" =~ ^[0-9]+$ ]]; then
+    warn "--max-cycles deve ser um número inteiro"
+    exit 2
+  fi
+  LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}.log"
+  SCRCPY_LOG="${LOG_DIR}/scrcpy.log"
+}
+
+# Handler de saída: garante a limpeza mesmo com erro ou sinal.
+on_exit() {
+  trap - EXIT INT TERM HUP
+  cleanup || true
+  rm -f "${STATE_DIR}/${SCRIPT_NAME}.pid" 2>/dev/null || true
+  log INFO "daemon encerrado"
+}
+
+# Ponto de entrada.
+main() {
+  parse_args "$@"
+  if (( DUMP_CONFIG == 1 || CHECK_CONFIG == 1 )); then
+    QUIET_LOG=1
+  fi
+  load_config
+  if (( DUMP_CONFIG == 1 )); then
+    dump_config
+    exit 0
+  fi
+  if (( CHECK_CONFIG == 1 )); then
+    if (( CONFIG_ERRORS > 0 )); then
+      printf 'configuração inválida: %d erro(s) em %s\n' "$CONFIG_ERRORS" "$CONFIG_FILE" >&2
+      exit 1
+    fi
+    printf 'configuração válida: %s\n' "$CONFIG_FILE"
+    exit 0
+  fi
+
+  setup_runtime_dirs
+  detect_init
+  trap on_exit EXIT
+  trap 'exit 0' INT TERM HUP
+  printf '%d\n' "$$" >"${STATE_DIR}/${SCRIPT_NAME}.pid" 2>/dev/null || true
+  STARTED_AT="$(date '+%Y-%m-%d %H:%M:%S')"
+  log INFO "iniciando (init=$INIT_SYSTEM, config=$CONFIG_FILE, pid=$$)"
+  log INFO "método=$METHOD resolução=$RESOLUTION dpi=$DPI fps=$FPS bitrate=$BITRATE"
+  main_loop
+}
+
+main "$@"

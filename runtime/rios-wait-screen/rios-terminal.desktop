@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Terminal
+Name[pt_BR]=Terminal
+Comment=Abre um terminal de manutenção do riOS
+Comment[pt_BR]=Abre um terminal de manutenção do riOS
+Exec=sh -c "x-terminal-emulator || lxterminal || xterm"
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupNotify=true

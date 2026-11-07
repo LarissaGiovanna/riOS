@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Reiniciar sessão
+Name[pt_BR]=Reiniciar sessão
+Comment=Reinicia o daemon rios-session
+Comment[pt_BR]=Reinicia o daemon rios-session
+Exec=rios-launch restart
+TryExec=rios-launch
+Icon=view-refresh
+Terminal=false
+Categories=System;
+StartupNotify=false

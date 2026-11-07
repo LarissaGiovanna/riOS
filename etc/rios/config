@@ -1,0 +1,64 @@
+# =============================================================================
+# riOS — configuração do daemon rios-session
+#
+# Formato: KEY=VALUE (uma por linha). Linhas com # são comentários.
+# Alterações passam a valer no próximo `rios-launch restart`.
+# =============================================================================
+
+# Método de abertura do DeX:
+#   auto        → tenta A, depois B, depois C (recomendado)
+#   new-display → só A: scrcpy --new-display (display virtual)
+#   overlay     → só B: overlay_display_devices + espelho
+#   mirror      → só C: espelho simples
+METHOD=auto
+
+# Resolução da sessão:
+#   auto     → lê a tela real com xrandr (fallback 1024x600)
+#   1024x600 → força um valor
+RESOLUTION=auto
+
+# Densidade lógica da tela em DPI. 160 ≈ 1 pixel lógico = 1 pixel físico
+# no painel 1024x600 do Eee PC 1015BX.
+DPI=160
+
+# Quadros por segundo do vídeo. 15 é o teto confortável para o AMD C-60.
+FPS=15
+
+# Bitrate do vídeo (ex.: 4M, 2M, 800K). A interface do DeX é quase estática.
+BITRATE=4M
+
+# Codec de vídeo: h264 (menor custo de decodificação), h265 ou av1.
+VIDEO_CODEC=h264
+
+# Áudio do celular: on | off. Desligado por padrão (1,5 GiB de RAM útil).
+AUDIO=off
+
+# Driver de renderização do scrcpy: software (seguro no Radeon HD 6290)
+# ou opengl (testar como otimização).
+RENDER_DRIVER=software
+
+# Modo do teclado: sdk (funciona sem configurar layout no celular) ou uhid.
+KEYBOARD=sdk
+
+# Modo do mouse/trackpad: sdk (movimento absoluto) ou uhid.
+MOUSE=sdk
+
+# Janela do scrcpy: fullscreen (kiosk) ou window.
+WINDOW_MODE=fullscreen
+
+# Segundos sem imagem até considerar que o método falhou e cair no fallback.
+BLACKOUT_TIMEOUT=15
+
+# Segundos de timeout por chamada ao adb.
+ADB_TIMEOUT=4
+
+# Segundos entre consultas a `adb devices` (polling).
+POLL_INTERVAL=2
+
+# Serial do aparelho (deixe vazio para usar o primeiro conectado).
+# Útil quando há mais de um celular plugado.
+#SERIAL=
+
+# Rotação do log em /var/log/rios/: tamanho máximo em bytes e cópias mantidas.
+LOG_MAX_BYTES=1048576
+LOG_KEEP=5

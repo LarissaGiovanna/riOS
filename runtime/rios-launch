@@ -1,0 +1,380 @@
+#!/usr/bin/env bash
+# =============================================================================
+# rios-launch — CLI de controle do daemon riOS
+#
+# Subcomandos:
+#   start    inicia o daemon (systemd, runit ou modo direto)
+#   stop     encerra o daemon
+#   restart  reinicia o daemon
+#   status   mostra aparelho, resolução, método, PID do scrcpy, CPU e RAM
+#   logs     acompanha o log (use -f para seguir em tempo real)
+#   shell    abre um shell adb no celular conectado
+#
+# Detecta automaticamente o init: systemd (/run/systemd/system) ou runit (sv).
+# =============================================================================
+set -euo pipefail
+
+SCRIPT_NAME="rios-launch"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+DAEMON="${SCRIPT_DIR}/rios-session"
+SERVICE="rios-session"
+
+CONFIG_FILE="${RIOS_CONFIG:-/etc/rios/config}"
+LOG_DIR="${RIOS_LOG_DIR:-/var/log/rios}"
+STATE_DIR="${RIOS_STATE_DIR:-/run/rios}"
+LOG_FILE="${LOG_DIR}/rios-session.log"
+STATUS_FILE="${STATE_DIR}/status"
+PID_FILE="${STATE_DIR}/rios-session.pid"
+ADB_TIMEOUT=4
+
+# Detecta o sistema de init em uso.
+detect_init() {
+  if [[ -d /run/systemd/system ]]; then
+    printf 'systemd'
+  else
+    printf 'runit'
+  fi
+}
+
+# Verifica se um PID está vivo (ignora zumbis).
+pid_alive() {
+  local pid="${1:-}"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  if [[ -r "/proc/$pid/stat" ]]; then
+    local pstate
+    pstate="$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)"
+    [[ "$pstate" != "Z" ]] || return 1
+  fi
+  return 0
+}
+
+# Lê o PID do daemon a partir do arquivo de PID.
+daemon_pid() {
+  local pid=""
+  [[ -r "$PID_FILE" ]] && pid="$(tr -dc '0-9' <"$PID_FILE" 2>/dev/null || true)"
+  if pid_alive "$pid"; then
+    printf '%s' "$pid"
+    return 0
+  fi
+  return 1
+}
+
+# Lê um campo do arquivo de status gravado pelo daemon.
+status_get() {
+  local key="$1"
+  [[ -r "$STATUS_FILE" ]] || return 1
+  grep -m1 "^${key}=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2- || true
+}
+
+# Verifica se o serviço está ativo no init atual.
+service_active() {
+  local init="$1"
+  case "$init" in
+    systemd)
+      systemctl is-active --quiet "$SERVICE" 2>/dev/null && return 0
+      ;;
+    runit)
+      if command -v sv >/dev/null 2>&1 && sv status "$SERVICE" 2>/dev/null | grep -q '^run:'; then
+        return 0
+      fi
+      ;;
+  esac
+  daemon_pid >/dev/null 2>&1
+}
+
+# Imprime a descrição amigável do método (A/B/C).
+method_label() {
+  case "${1:-}" in
+    A) printf 'A — display virtual (scrcpy --new-display)' ;;
+    B) printf 'B — overlay_display_devices + espelho' ;;
+    C) printf 'C — espelho simples' ;;
+    *) printf '—' ;;
+  esac
+}
+
+# Descobre o estado do primeiro aparelho em `adb devices`.
+adb_device_info() {
+  if ! command -v adb >/dev/null 2>&1; then
+    printf 'adb não encontrado'
+    return 0
+  fi
+  local out serial="" state="" field1 field2
+  out="$(timeout "$ADB_TIMEOUT" adb devices 2>/dev/null || true)"
+  while IFS=$'\t ' read -r field1 field2 _rest; do
+    [[ -z "$field1" || "$field1" == "List" ]] && continue
+    if [[ -n "$field2" ]]; then
+      serial="$field1"
+      state="$field2"
+      break
+    fi
+  done <<<"$out"
+  case "$state" in
+    device)       printf '%s (autorizado)' "$serial" ;;
+    unauthorized) printf '%s (não autorizado — aceite a chave RSA)' "$serial" ;;
+    offline)      printf '%s (offline)' "$serial" ;;
+    *)            printf 'nenhum aparelho conectado' ;;
+  esac
+}
+
+# Descobre a resolução da tela via xrandr (ou usa a do status do daemon).
+current_resolution() {
+  local res="" fallback
+  if command -v xrandr >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+    res="$(xrandr --current 2>/dev/null | awk '/ connected/ {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^[0-9]+x[0-9]+/) { sub(/\+.*/, "", $i); print $i; exit }
+      }
+    }' || true)"
+  fi
+  if [[ ! "$res" =~ ^[0-9]+x[0-9]+$ ]]; then
+    fallback="$(status_get RESOLUTION || true)"
+    [[ -n "$fallback" ]] && res="$fallback"
+  fi
+  [[ -n "$res" ]] || res="—"
+  printf '%s' "$res"
+}
+
+# Mostra CPU (%) e RAM (MB) de um processo.
+process_usage() {
+  local pid="$1" cpu rss
+  cpu="$(LC_ALL=C ps -o %cpu= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+  rss="$(LC_ALL=C ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+  [[ "$cpu" =~ ^[0-9.]+$ ]] || cpu="—"
+  if [[ "$rss" =~ ^[0-9]+$ ]]; then
+    rss="$(awk -v kb="$rss" 'BEGIN { printf "%.1f", kb / 1024 }')"
+    printf '%s%% de CPU, %s MB de RAM' "$cpu" "$rss"
+  else
+    printf '%s%% de CPU, — de RAM' "$cpu"
+  fi
+}
+
+# Subcomando status.
+cmd_status() {
+  local init state pid scrcpy_pid cpu_line
+  init="$(detect_init)"
+  state="$(status_get STATE || true)"
+  pid="$(daemon_pid || true)"
+  scrcpy_pid="$(status_get SCRCPY_PID || true)"
+
+  printf 'riOS — status da sessão\n'
+  printf '  Init...........: %s\n' "$init"
+  if [[ -n "$pid" ]]; then
+    printf '  Daemon.........: ativo (PID %s)\n' "$pid"
+  else
+    printf '  Daemon.........: parado\n'
+  fi
+  printf '  Estado.........: %s\n' "${state:-—}"
+  printf '  Aparelho.......: %s\n' "$(adb_device_info)"
+  local android
+  android="$(status_get ANDROID || true)"
+  printf '  Android........: %s\n' "${android:-—}"
+  printf '  Resolução......: %s\n' "$(current_resolution)"
+  printf '  Método.........: %s\n' "$(method_label "$(status_get METHOD || true)")"
+  if pid_alive "$scrcpy_pid"; then
+    printf '  scrcpy PID.....: %s\n' "$scrcpy_pid"
+    cpu_line="$(process_usage "$scrcpy_pid")"
+    printf '  Consumo........: %s\n' "$cpu_line"
+  elif [[ -n "$scrcpy_pid" ]]; then
+    printf '  scrcpy PID.....: %s (já encerrado)\n' "$scrcpy_pid"
+    printf '  Consumo........: —\n'
+  else
+    printf '  scrcpy PID.....: —\n'
+    printf '  Consumo........: —\n'
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# start / stop / restart
+# ---------------------------------------------------------------------------
+
+# Inicia o daemon diretamente em segundo plano (sem gerenciador de init).
+direct_start() {
+  local pid newpid
+  if pid="$(daemon_pid)"; then
+    printf 'riOS já está em execução (modo direto, PID %s).\n' "$pid"
+    return 0
+  fi
+  if [[ ! -x "$DAEMON" ]]; then
+    printf 'erro: daemon não encontrado ou sem permissão de execução: %s\n' "$DAEMON" >&2
+    return 1
+  fi
+  mkdir -p "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
+  nohup "$DAEMON" >>"$LOG_FILE" 2>&1 &
+  newpid=$!
+  sleep 0.5
+  if pid="$(daemon_pid)"; then
+    printf 'riOS iniciado em modo direto (PID %s).\n' "$pid"
+  elif pid_alive "$newpid"; then
+    printf 'riOS iniciado em modo direto (PID %s).\n' "$newpid"
+  else
+    printf 'erro: o daemon encerrou logo após iniciar; veja %s\n' "$LOG_FILE" >&2
+    return 1
+  fi
+}
+
+# Subcomando start.
+cmd_start() {
+  local init
+  init="$(detect_init)"
+  mkdir -p "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
+  case "$init" in
+    systemd)
+      if service_active "$init"; then
+        printf 'riOS já está em execução (systemd).\n'
+        return 0
+      fi
+      if systemctl start "$SERVICE" 2>/dev/null; then
+        printf 'riOS iniciado via systemd (%s.service).\n' "$SERVICE"
+      else
+        printf 'aviso: serviço systemd não disponível; iniciando em modo direto.\n'
+        direct_start
+      fi
+      ;;
+    runit)
+      if service_active "$init"; then
+        printf 'riOS já está em execução (runit).\n'
+        return 0
+      fi
+      if [[ -d "/var/service/$SERVICE" || -d "/etc/sv/$SERVICE" ]]; then
+        if sv start "$SERVICE" 2>/dev/null || sv up "$SERVICE" 2>/dev/null; then
+          printf 'riOS iniciado via runit (%s).\n' "$SERVICE"
+        else
+          printf 'aviso: sv falhou; iniciando em modo direto.\n'
+          direct_start
+        fi
+      else
+        printf 'aviso: serviço runit não instalado; iniciando em modo direto.\n'
+        direct_start
+      fi
+      ;;
+  esac
+}
+
+# Encerra o daemon iniciado em modo direto.
+direct_stop() {
+  local pid i=0
+  pid="$(daemon_pid || true)"
+  if [[ -z "$pid" ]]; then
+    printf 'riOS não está em execução.\n'
+    return 0
+  fi
+  kill -TERM "$pid" 2>/dev/null || true
+  while (( i < 25 )) && pid_alive "$pid"; do
+    sleep 0.2
+    i=$(( i + 1 ))
+  done
+  if pid_alive "$pid"; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE" 2>/dev/null || true
+  printf 'riOS encerrado (modo direto, PID %s).\n' "$pid"
+}
+
+# Subcomando stop.
+cmd_stop() {
+  local init
+  init="$(detect_init)"
+  case "$init" in
+    systemd)
+      if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+        systemctl stop "$SERVICE"
+        printf 'riOS encerrado via systemd.\n'
+      else
+        direct_stop
+      fi
+      ;;
+    runit)
+      if command -v sv >/dev/null 2>&1 && sv status "$SERVICE" 2>/dev/null | grep -q '^run:'; then
+        sv stop "$SERVICE" 2>/dev/null || sv down "$SERVICE" 2>/dev/null || true
+        printf 'riOS encerrado via runit.\n'
+      else
+        direct_stop
+      fi
+      ;;
+  esac
+}
+
+# Subcomando restart.
+cmd_restart() {
+  cmd_stop
+  sleep 1
+  cmd_start
+}
+
+# ---------------------------------------------------------------------------
+# logs / shell / ajuda
+# ---------------------------------------------------------------------------
+
+# Subcomando logs: mostra as últimas linhas e, com -f, acompanha.
+cmd_logs() {
+  local follow=0
+  [[ "${1:-}" == "-f" || "${1:-}" == "--follow" ]] && follow=1
+  if [[ -r "$LOG_FILE" ]]; then
+    if (( follow == 1 )); then
+      tail -n 100 -f "$LOG_FILE"
+    else
+      tail -n 100 "$LOG_FILE"
+    fi
+    return 0
+  fi
+  if [[ "$(detect_init)" == "systemd" ]] && command -v journalctl >/dev/null 2>&1; then
+    if (( follow == 1 )); then
+      journalctl -u "$SERVICE" -n 100 -f
+    else
+      journalctl -u "$SERVICE" -n 100
+    fi
+    return 0
+  fi
+  printf 'nenhum log encontrado em %s\n' "$LOG_FILE"
+}
+
+# Subcomando shell: abre um shell adb (interativo ou com um comando).
+cmd_shell() {
+  if ! command -v adb >/dev/null 2>&1; then
+    printf 'erro: adb não encontrado.\n' >&2
+    return 1
+  fi
+  exec adb shell "$@"
+}
+
+# Texto de ajuda.
+usage() {
+  cat <<'USAGE'
+rios-launch — controle do daemon riOS
+
+Uso:
+  rios-launch <comando>
+
+Comandos:
+  start     inicia o daemon (systemd, runit ou modo direto)
+  stop      encerra o daemon
+  restart   reinicia o daemon
+  status    aparelho, resolução, método, PID do scrcpy, CPU e RAM
+  logs [-f] mostra o log (com -f, acompanha em tempo real)
+  shell     abre um shell adb no celular conectado
+
+O init é detectado automaticamente: systemd (/run/systemd/system) ou runit (sv).
+USAGE
+}
+
+# Ponto de entrada da CLI.
+main() {
+  case "${1:-}" in
+    start)   shift; cmd_start "$@" ;;
+    stop)    shift; cmd_stop "$@" ;;
+    restart) shift; cmd_restart "$@" ;;
+    status)  shift; cmd_status "$@" ;;
+    logs)    shift; cmd_logs "$@" ;;
+    shell)   shift; cmd_shell "$@" ;;
+    ""|-h|--help|help) usage ;;
+    *)
+      printf 'comando desconhecido: %s\n\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"
