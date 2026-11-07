@@ -69,7 +69,7 @@ mantém os dois caminhos separados (ver [`PLAN.md`](PLAN.md) §9.1.1).
 | Fase | Conteúdo | Estado |
 |---|---|---|
 | M0 | Plano de desenvolvimento | ✅ [`PLAN.md`](PLAN.md) |
-| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | 🔄 Em andamento |
+| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | 🔄 Em andamento — daemon/CLI validados com adb simulado; falta a bancada |
 | M2 | Validação no aparelho real (DeX + teclado/trackpad) | ⬜ |
 | M3 | Build da imagem (`rios.img`) | ⬜ |
 | M4 | Live USB | ⬜ |
@@ -84,6 +84,27 @@ mantém os dois caminhos separados (ver [`PLAN.md`](PLAN.md) §9.1.1).
    instalado no netbook** (`xbps-install -S android-tools scrcpy`, serviço em `/etc/sv`).
    O ciclo de teste cai de horas (build de imagem) para minutos.
 3. **M2**: repetir com o celular conectado de verdade.
+
+## Documentação de operação
+
+- [`docs/OPERATOR.md`](docs/OPERATOR.md) — uso diário, atalhos, configuração e
+  instalação na bancada (Void/runit).
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — sintoma → causa → solução.
+- [`docs/revisao-p2.md`](docs/revisao-p2.md) — revisão do daemon/CLI, achados,
+  correções e roteiro de validação no aparelho real.
+- [`docs/BUILD.md`](docs/BUILD.md) — construção da imagem e gravação.
+
+## Testes sem celular
+
+A suíte usa `adb` e `scrcpy` simulados e roda em qualquer Linux com Bash:
+
+```sh
+tests/run-tests.sh
+```
+
+Cobre config, máquina de estados, fallbacks A/B/C, estados de conexão e a CLI.
+Os testes que dependem do Galaxy real estão em
+[`tests/PENDING-HARDWARE.md`](tests/PENDING-HARDWARE.md).
 
 ## Variantes de entrega
 
