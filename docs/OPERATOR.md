@@ -166,8 +166,24 @@ scrcpy --version      # precisa ser 3.0 ou superior para --new-display
 ```sh
 sudo install -m 0755 runtime/rios-session /usr/local/bin/rios-session
 sudo install -m 0755 runtime/rios-launch  /usr/local/bin/rios-launch
-sudo install -d /etc/rios /var/log/rios
+sudo install -d /etc/rios
 sudo install -m 0644 etc/rios/config /etc/rios/config
+```
+
+Diretórios padrão:
+
+| Quem roda | Logs | Estado (status/PID) |
+|---|---|---|
+| root / serviço de init | `/var/log/rios` | `/run/rios` |
+| usuário comum / autostart | `~/.local/state/rios/log` | `$XDG_RUNTIME_DIR/rios` (ou `/tmp/rios-$UID`) |
+
+A CLI usa a mesma regra do daemon, então `rios-launch status` e `logs` encontram
+os arquivos nos dois casos. Para centralizar em `/var/log/rios` rodando como
+usuário, crie o diretório com dono correto e exporte `RIOS_LOG_DIR`:
+
+```sh
+sudo install -d -o "$USER" -g "$USER" /var/log/rios
+# no autostart/serviço: export RIOS_LOG_DIR=/var/log/rios
 ```
 
 A tela de espera (`runtime/rios-wait-screen/`) é procurada ao lado do executável
@@ -215,6 +231,8 @@ sudo tee /etc/sv/rios-session/run >/dev/null <<'EOF'
 exec 2>&1
 export DISPLAY=:0
 export XAUTHORITY=/home/SEU_USUARIO/.Xauthority
+export HOME=/home/SEU_USUARIO
+export XDG_RUNTIME_DIR=/run/user/UID_DO_USUARIO
 exec chpst -u SEU_USUARIO /usr/local/bin/rios-session
 EOF
 sudo chmod +x /etc/sv/rios-session/run
@@ -245,8 +263,10 @@ adb shell getprop ro.build.version.release
 adb shell settings get global overlay_display_devices
 ```
 
-O log fica em `/var/log/rios/rios-session.log` e o log do scrcpy em
-`/var/log/rios/scrcpy.log`. O status corrente fica em `/run/rios/status`.
+O log fica em `/var/log/rios/rios-session.log` quando o daemon roda como root
+(serviço) ou em `~/.local/state/rios/log/rios-session.log` quando roda como
+usuário (autostart); o log do scrcpy fica ao lado. O status corrente fica em
+`/run/rios/status` (root) ou `$XDG_RUNTIME_DIR/rios/status` (usuário).
 
 Se `rios-launch status` disser **parado** mas o processo existir, o arquivo de
 PID pode estar velho; `rios-launch restart` resolve. Se o problema persistir,

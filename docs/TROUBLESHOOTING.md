@@ -40,6 +40,11 @@ lsusb
 > **Privacidade:** `adb shell` pode expor dados do celular. Antes de publicar
 > logs ou capturas, remova serial, IP, nome do aparelho e conteúdo de tela.
 
+> **Caminhos de log:** as linhas acima usam `/var/log/rios` (daemon como root ou
+> serviço). Rodando como usuário comum, o padrão é
+> `~/.local/state/rios/log`; o status fica em `$XDG_RUNTIME_DIR/rios` (ou
+> `/tmp/rios-$UID`). Veja `OPERATOR.md` §7.2.
+
 ---
 
 ## 2. O daemon não inicia
@@ -196,11 +201,11 @@ WINDOW_MODE=fullscreen
 
 | Sintoma | Causa provável | Solução |
 |---|---|---|
-| `rios-launch logs` → “nenhum log encontrado” | Daemon nunca iniciou ou `RIOS_LOG_DIR` diferente | Rode `rios-launch start` e confira `/var/log/rios/` |
+| `rios-launch logs` → “nenhum log encontrado” | Daemon nunca iniciou ou `RIOS_LOG_DIR` diferente | Rode `rios-launch start`; confira `/var/log/rios/` (root/serviço) ou `~/.local/state/rios/log/` (usuário) |
 | Log cresce sem parar | `LOG_MAX_BYTES`/`LOG_KEEP` inadequados | Ajuste no config; a rotação é automática |
 | `status` mostra “parado” com processo vivo | PID file velho ou daemon iniciado fora da CLI | `rios-launch restart`; confira `pgrep -af rios-session` |
 | `status` mostra método vazio | Nenhuma sessão ativa (IDLE) | Normal na tela de espera |
-| Permissão negada em `/var/log/rios` | Diretório criado por outro usuário | `sudo chown -R USUARIO /var/log/rios` ou use `RIOS_LOG_DIR` |
+| Permissão negada em `/var/log/rios` | Diretório criado por outro usuário | `sudo chown -R USUARIO /var/log/rios`, use `RIOS_LOG_DIR` ou deixe o padrão de usuário |
 
 ---
 
