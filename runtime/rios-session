@@ -80,6 +80,8 @@ INIT_SYSTEM="runit"
 STARTED_AT=""
 CYCLES=0
 MAX_CYCLES=0
+ONCE=0
+MIRROR_ARGS=()
 LAST_WAIT_MESSAGE=""
 STATUS_MESSAGE="Conecte o celular Samsung por USB"
 QUIET_LOG=0
@@ -153,7 +155,7 @@ validate_config_value() {
     RESOLUTION)  [[ "$value" == "auto" || "$value" =~ ^[0-9]{2,5}x[0-9]{2,5}$ ]] ;;
     DPI)         [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 72 && 10#$value <= 640 )) ;;
     FPS)         [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 1 && 10#$value <= 240 )) ;;
-    BITRATE)     [[ "$value" =~ ^[0-9]+[KkMmGg]?$ ]] ;;
+    BITRATE)     [[ "$value" =~ ^([0-9]+)[KkMmGg]?$ ]] && (( 10#${BASH_REMATCH[1]} > 0 )) ;;
     VIDEO_CODEC) [[ "$value" =~ ^(h264|h265|av1)$ ]] ;;
     AUDIO)       [[ "$value" =~ ^(on|off)$ ]] ;;
     RENDER_DRIVER) [[ "$value" =~ ^(software|opengl)$ ]] ;;
@@ -202,6 +204,13 @@ load_config() {
       continue
     fi
     if validate_config_value "$key" "$value"; then
+      # Normaliza inteiros (ex.: "015" → 15) para evitar que a aritmética do
+      # Bash os interprete como octal.
+      case "$key" in
+        DPI|FPS|BLACKOUT_TIMEOUT|ADB_TIMEOUT|POLL_INTERVAL|LOG_MAX_BYTES|LOG_KEEP)
+          value=$(( 10#$value ))
+          ;;
+      esac
       printf -v "$key" '%s' "$value"
     else
       CONFIG_ERRORS=$(( CONFIG_ERRORS + 1 ))
@@ -238,9 +247,12 @@ setup_runtime_dirs() {
   fi
 }
 
-# Detecta o sistema de init: systemd se /run/systemd/system existir, senão runit.
+# Detecta o sistema de init: RIOS_INIT tem prioridade (útil em testes);
+# systemd se /run/systemd/system existir, senão runit.
 detect_init() {
-  if [[ -d /run/systemd/system ]]; then
+  if [[ -n "${RIOS_INIT:-}" ]]; then
+    INIT_SYSTEM="$RIOS_INIT"
+  elif [[ -d /run/systemd/system ]]; then
     INIT_SYSTEM="systemd"
   else
     INIT_SYSTEM="runit"
@@ -267,16 +279,17 @@ status_write() {
   mv -f "$tmp" "${STATE_DIR}/status" 2>/dev/null || rm -f "$tmp"
 }
 
-# Muda de estado e registra a transição.
+# Muda de estado e registra a transição. O status é gravado antes do log para
+# que quem observa o log nunca veja um estado que ainda não está no status.
 set_state() {
   STATE="$1"
   shift || true
+  status_write
   if (( $# > 0 )); then
     log INFO "estado=$STATE — $*"
   else
     log INFO "estado=$STATE"
   fi
-  status_write
 }
 
 # ---------------------------------------------------------------------------
@@ -317,7 +330,7 @@ detect_device() {
   out="$(run_with_timeout adb devices 2>/dev/null || true)"
   while IFS=$'\t ' read -r field1 field2 _rest; do
     [[ -z "$field1" ]] && continue
-    [[ "$field1" == "List" ]] && continue
+    [[ "$field1" == "List" || "$field1" == "*" || "$field1" == "adb" ]] && continue
     if [[ -n "$field2" ]]; then
       serial="$field1"
       state="$field2"
@@ -439,6 +452,11 @@ show_wait_screen() {
 # Valida o Android, aplica os settings globais e resolve a resolução.
 prepare_device() {
   set_state PREPARING "validando o aparelho e aplicando settings"
+  if ! command -v scrcpy >/dev/null 2>&1; then
+    warn "scrcpy não encontrado no PATH"
+    show_wait_screen "scrcpy não encontrado — instale o pacote scrcpy"
+    return 1
+  fi
   get_android_version
   log INFO "aparelho $DEVICE_SERIAL — Android ${ANDROID_RELEASE:-desconhecido} (SDK ${ANDROID_SDK:-desconhecido})"
   if ! android_is_supported; then
@@ -474,6 +492,10 @@ is_process_alive() {
 
 # Inicia o scrcpy em segundo plano e guarda o PID em SCRCPY_PID.
 start_scrcpy() {
+  if ! command -v scrcpy >/dev/null 2>&1; then
+    warn "scrcpy não encontrado no PATH"
+    return 1
+  fi
   local -a cmd=(scrcpy)
   if [[ -n "$SERIAL" ]]; then
     cmd+=(-s "$SERIAL")
@@ -703,6 +725,11 @@ wait_for_device() {
         ;;
     esac
     show_wait_screen "$msg"
+    # --once executa uma única detecção: se não há aparelho pronto, encerra
+    # em vez de esperar para sempre.
+    if (( ONCE == 1 )); then
+      return 1
+    fi
     sleep "$POLL_INTERVAL"
   done
 }
@@ -721,10 +748,10 @@ main_loop() {
     if prepare_device; then
       run_session || true
       cleanup
-      CYCLES=$(( CYCLES + 1 ))
-    else
+    elif (( ONCE == 0 )); then
       sleep "$POLL_INTERVAL"
     fi
+    CYCLES=$(( CYCLES + 1 ))
   done
 }
 
@@ -744,7 +771,7 @@ Opções:
   -c, --config ARQUIVO   arquivo KEY=VALUE (padrão: /etc/rios/config)
       --log-dir DIR      diretório de logs (padrão: /var/log/rios)
       --state-dir DIR    diretório de estado (padrão: /run/rios)
-      --once             executa um único ciclo e encerra
+      --once             executa um único ciclo e encerra (mesmo sem aparelho)
       --max-cycles N     encerra após N ciclos (0 = infinito, padrão)
       --dump-config      imprime a configuração efetiva e encerra
       --check-config     valida a configuração e encerra
@@ -773,6 +800,7 @@ parse_args() {
         shift 2
         ;;
       --once)
+        ONCE=1
         MAX_CYCLES=1
         shift
         ;;
@@ -807,6 +835,7 @@ parse_args() {
     warn "--max-cycles deve ser um número inteiro"
     exit 2
   fi
+  MAX_CYCLES=$(( 10#$MAX_CYCLES ))
   LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}.log"
   SCRCPY_LOG="${LOG_DIR}/scrcpy.log"
 }
@@ -814,7 +843,10 @@ parse_args() {
 # Handler de saída: garante a limpeza mesmo com erro ou sinal.
 on_exit() {
   trap - EXIT INT TERM HUP
-  cleanup || true
+  # Evita repetir a limpeza quando o loop principal já voltou para IDLE.
+  if [[ "$STATE" != "IDLE" || -n "$SCRCPY_PID" || -n "$METHOD_USED" ]]; then
+    cleanup || true
+  fi
   rm -f "${STATE_DIR}/${SCRIPT_NAME}.pid" 2>/dev/null || true
   log INFO "daemon encerrado"
 }

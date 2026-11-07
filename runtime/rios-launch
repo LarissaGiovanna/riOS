@@ -27,9 +27,12 @@ STATUS_FILE="${STATE_DIR}/status"
 PID_FILE="${STATE_DIR}/rios-session.pid"
 ADB_TIMEOUT=4
 
-# Detecta o sistema de init em uso.
+# Detecta o sistema de init em uso. RIOS_INIT tem prioridade (útil em testes);
+# "direct" força o modo sem gerenciador de serviços.
 detect_init() {
-  if [[ -d /run/systemd/system ]]; then
+  if [[ -n "${RIOS_INIT:-}" ]]; then
+    printf '%s' "$RIOS_INIT"
+  elif [[ -d /run/systemd/system ]]; then
     printf 'systemd'
   else
     printf 'runit'
@@ -201,7 +204,9 @@ direct_start() {
     return 1
   fi
   mkdir -p "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
-  nohup "$DAEMON" >>"$LOG_FILE" 2>&1 &
+  # O daemon já grava no próprio arquivo de log; mandar o stderr para o mesmo
+  # arquivo duplicaria cada linha.
+  nohup "$DAEMON" >/dev/null 2>&1 &
   newpid=$!
   sleep 0.5
   if pid="$(daemon_pid)"; then
@@ -220,6 +225,9 @@ cmd_start() {
   init="$(detect_init)"
   mkdir -p "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
   case "$init" in
+    direct)
+      direct_start
+      ;;
     systemd)
       if service_active "$init"; then
         printf 'riOS já está em execução (systemd).\n'
@@ -277,6 +285,9 @@ cmd_stop() {
   local init
   init="$(detect_init)"
   case "$init" in
+    direct)
+      direct_stop
+      ;;
     systemd)
       if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
         systemctl stop "$SERVICE"
@@ -336,6 +347,11 @@ cmd_shell() {
     printf 'erro: adb não encontrado.\n' >&2
     return 1
   fi
+  local serial
+  serial="$(status_get SERIAL || true)"
+  if [[ -n "$serial" ]]; then
+    exec adb -s "$serial" shell "$@"
+  fi
   exec adb shell "$@"
 }
 
@@ -356,6 +372,7 @@ Comandos:
   shell     abre um shell adb no celular conectado
 
 O init é detectado automaticamente: systemd (/run/systemd/system) ou runit (sv).
+RIOS_INIT=systemd|runit|direct força um modo (útil em testes).
 USAGE
 }
 
