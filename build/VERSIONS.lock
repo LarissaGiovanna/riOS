@@ -1,0 +1,38 @@
+# ==============================================================================
+# riOS — VERSIONS.lock
+# Versões fixadas e hashes de pacotes essenciais para o build da imagem riOS.
+# ==============================================================================
+#
+# INSTRUÇÕES DE ATUALIZAÇÃO:
+#
+# 1. SCRCPY_VERSION:
+#    - Versão oficial do scrcpy (ex: 3.1, 5.0).
+#    - Para verificar versões lançadas:
+#        https://github.com/Genymobile/scrcpy/releases
+#    - Altere o valor abaixo para a versão desejada (ex: SCRCPY_VERSION=5.0).
+#
+# 2. SCRCPY_SHA256:
+#    - Checksum SHA-256 do tarball correspondente em releases do GitHub:
+#        https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-linux-x86_64-v${SCRCPY_VERSION}.tar.gz
+#    - Para obter e conferir o SHA-256 no host:
+#        wget https://github.com/Genymobile/scrcpy/releases/download/v<VERSAO>/scrcpy-linux-x86_64-v<VERSAO>.tar.gz
+#        sha256sum scrcpy-linux-x86_64-v<VERSAO>.tar.gz
+#    - Cole o hash hexadecimal de 64 caracteres no lugar de "placeholder".
+#    - Se mantido como "placeholder", o script de post-install avisará e, caso
+#      o tarball não esteja disponível, utilizará o pacote da distro como fallback.
+#
+# 3. ADB_PACKAGE:
+#    - Nome do pacote do Android Debug Bridge no repositório Debian (padrão: adb).
+#
+# 4. KERNEL_PACKAGE:
+#    - Metapacote do kernel Linux amd64 no Debian (padrão: linux-image-amd64).
+#
+# 5. DEBIAN_SUITE:
+#    - Versão/suíte alvo do Debian para o debootstrap (ex: trixie, bookworm).
+# ==============================================================================
+
+SCRCPY_VERSION=5.0
+SCRCPY_SHA256=placeholder
+ADB_PACKAGE=adb
+KERNEL_PACKAGE=linux-image-amd64
+DEBIAN_SUITE=trixie

@@ -1,0 +1,3 @@
+# Regras udev para o riOS (dispositivos Samsung Galaxy)
+# Vendor 04e8: Samsung Electronics Co., Ltd
+SUBSYSTEM=="usb", ATTR{idVendor}=="04e8", MODE="0666", GROUP="plugdev"
