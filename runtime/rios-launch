@@ -19,9 +19,33 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 DAEMON="${SCRIPT_DIR}/rios-session"
 SERVICE="rios-session"
 
+# Mesma regra de diretórios do rios-session: root usa /run e /var/log; usuário
+# comum usa XDG_RUNTIME_DIR/XDG_STATE_HOME (ou HOME/tmp como fallback).
+default_log_dir() {
+  if (( EUID == 0 )); then
+    printf '/var/log/rios'
+  elif [[ -n "${XDG_STATE_HOME:-}" ]]; then
+    printf '%s/rios/log' "$XDG_STATE_HOME"
+  elif [[ -n "${HOME:-}" ]]; then
+    printf '%s/.local/state/rios/log' "$HOME"
+  else
+    printf '%s/rios-log-%s' "${TMPDIR:-/tmp}" "$(id -u)"
+  fi
+}
+
+default_state_dir() {
+  if (( EUID == 0 )); then
+    printf '/run/rios'
+  elif [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    printf '%s/rios' "$XDG_RUNTIME_DIR"
+  else
+    printf '%s/rios-%s' "${TMPDIR:-/tmp}" "$(id -u)"
+  fi
+}
+
 CONFIG_FILE="${RIOS_CONFIG:-/etc/rios/config}"
-LOG_DIR="${RIOS_LOG_DIR:-/var/log/rios}"
-STATE_DIR="${RIOS_STATE_DIR:-/run/rios}"
+LOG_DIR="${RIOS_LOG_DIR:-$(default_log_dir)}"
+STATE_DIR="${RIOS_STATE_DIR:-$(default_state_dir)}"
 LOG_FILE="${LOG_DIR}/rios-session.log"
 STATUS_FILE="${STATE_DIR}/status"
 PID_FILE="${STATE_DIR}/rios-session.pid"

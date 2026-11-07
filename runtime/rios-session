@@ -32,9 +32,33 @@ readonly DEFAULT_LOG_DIR="/var/log/rios"
 readonly DEFAULT_STATE_DIR="/run/rios"
 readonly DEFAULT_WAIT_SCREEN_DIR="${SCRIPT_DIR}/rios-wait-screen"
 
+# Diretórios padrão para usuário comum: /run e /var/log pertencem ao root.
+# A CLI rios-launch usa a mesma regra, então status/logs encontram o daemon.
+default_log_dir() {
+  if (( EUID == 0 )); then
+    printf '%s' "$DEFAULT_LOG_DIR"
+  elif [[ -n "${XDG_STATE_HOME:-}" ]]; then
+    printf '%s/rios/log' "$XDG_STATE_HOME"
+  elif [[ -n "${HOME:-}" ]]; then
+    printf '%s/.local/state/rios/log' "$HOME"
+  else
+    printf '%s/rios-log-%s' "${TMPDIR:-/tmp}" "$(id -u)"
+  fi
+}
+
+default_state_dir() {
+  if (( EUID == 0 )); then
+    printf '%s' "$DEFAULT_STATE_DIR"
+  elif [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    printf '%s/rios' "$XDG_RUNTIME_DIR"
+  else
+    printf '%s/rios-%s' "${TMPDIR:-/tmp}" "$(id -u)"
+  fi
+}
+
 CONFIG_FILE="${RIOS_CONFIG:-$DEFAULT_CONFIG}"
-LOG_DIR="${RIOS_LOG_DIR:-$DEFAULT_LOG_DIR}"
-STATE_DIR="${RIOS_STATE_DIR:-$DEFAULT_STATE_DIR}"
+LOG_DIR="${RIOS_LOG_DIR:-$(default_log_dir)}"
+STATE_DIR="${RIOS_STATE_DIR:-$(default_state_dir)}"
 WAIT_SCREEN_DIR="${RIOS_WAIT_SCREEN_DIR:-$DEFAULT_WAIT_SCREEN_DIR}"
 LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}.log"
 SCRCPY_LOG="${LOG_DIR}/scrcpy.log"
@@ -111,7 +135,7 @@ rotate_log() {
 # Acrescenta uma linha ao arquivo de log (com rotação automática).
 append_log() {
   local line="$1"
-  [[ -n "${LOG_FILE:-}" ]] || return 0
+  [[ -n "${LOG_FILE:-}" && -d "${LOG_DIR:-}" ]] || return 0
   rotate_log || true
   printf '%s\n' "$line" >>"$LOG_FILE" 2>/dev/null || true
 }
@@ -859,6 +883,11 @@ main() {
   parse_args "$@"
   if (( DUMP_CONFIG == 1 || CHECK_CONFIG == 1 )); then
     QUIET_LOG=1
+  else
+    # Prepara logs/estado antes de ler o config, para que avisos do parsing
+    # também cheguem ao arquivo de log.
+    setup_runtime_dirs
+    detect_init
   fi
   load_config
   if (( DUMP_CONFIG == 1 )); then
@@ -874,8 +903,6 @@ main() {
     exit 0
   fi
 
-  setup_runtime_dirs
-  detect_init
   trap on_exit EXIT
   trap 'exit 0' INT TERM HUP
   printf '%d\n' "$$" >"${STATE_DIR}/${SCRIPT_NAME}.pid" 2>/dev/null || true
