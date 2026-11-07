@@ -3,13 +3,16 @@
 # tests/mock/scrcpy — scrcpy falso para testar o rios-session sem hardware
 #
 # Variáveis:
-#   MOCK_SCRCPY_DURATION  segundos que a "janela" fica viva (padrão: 5)
-#   MOCK_SCRCPY_FAIL      1 faz o scrcpy falhar imediatamente
-#   MOCK_SCRCPY_LOG       arquivo de log (padrão: ${TMPDIR:-/tmp}/mock-scrcpy.log)
+#   MOCK_SCRCPY_DURATION    segundos que a "janela" fica viva (padrão: 5)
+#   MOCK_SCRCPY_FAIL        1 faz todas as execuções falharem imediatamente
+#   MOCK_SCRCPY_FAIL_TIMES  faz falhar apenas as N primeiras execuções
+#   MOCK_SCRCPY_LOG         arquivo de log (padrão: ${TMPDIR:-/tmp}/mock-scrcpy.log)
+#   MOCK_SCRCPY_COUNT_FILE  contador de execuções (padrão: ao lado do log)
 # =============================================================================
 set -euo pipefail
 
 LOG_FILE="${MOCK_SCRCPY_LOG:-${TMPDIR:-/tmp}/mock-scrcpy.log}"
+COUNT_FILE="${MOCK_SCRCPY_COUNT_FILE:-$(dirname -- "$LOG_FILE")/mock-scrcpy-count}"
 mkdir -p "$(dirname -- "$LOG_FILE")" 2>/dev/null || true
 
 # Registra um evento (START/TERM/END/FAIL) para inspeção dos testes.
@@ -19,11 +22,28 @@ log_event() {
     "$1" "$$" "${*:2}" >>"$LOG_FILE" 2>/dev/null || true
 }
 
+# Conta quantas vezes o scrcpy foi executado nesta rodada.
+count=0
+if [[ -f "$COUNT_FILE" ]]; then
+  count="$(tr -dc '0-9' <"$COUNT_FILE" 2>/dev/null || echo 0)"
+  [[ -n "$count" ]] || count=0
+fi
+count=$(( count + 1 ))
+printf '%s\n' "$count" >"$COUNT_FILE" 2>/dev/null || true
+
 log_event START "$@"
 
+fail=0
+fail_times="${MOCK_SCRCPY_FAIL_TIMES:-0}"
 if [[ "${MOCK_SCRCPY_FAIL:-0}" == "1" ]]; then
+  fail=1
+elif [[ "$fail_times" =~ ^[0-9]+$ ]] && (( count <= fail_times )); then
+  fail=1
+fi
+
+if (( fail == 1 )); then
   log_event FAIL "$@"
-  printf 'scrcpy: falha simulada (MOCK_SCRCPY_FAIL=1)\n' >&2
+  printf 'scrcpy: falha simulada (execução %d)\n' "$count" >&2
   exit 1
 fi
 

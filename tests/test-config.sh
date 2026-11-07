@@ -90,7 +90,7 @@ METHOD=banana
 RESOLUTION=abc
 DPI=9999
 FPS=0
-BITRATE=abc
+BITRATE=0
 VIDEO_CODEC=vp9
 AUDIO=maybe
 RENDER_DRIVER=vulkan
@@ -139,7 +139,29 @@ check_contains "$TMP/missing.out" '^POLL_INTERVAL=2$' "default POLL_INTERVAL=2 s
 check_contains "$TMP/missing.err" 'não encontrado' "aviso de arquivo ausente emitido"
 
 # ---------------------------------------------------------------------------
-# 4. O template entregue em etc/rios/config é válido.
+# 4. Inteiros com zero à esquerda são normalizados (não viram octal).
+# ---------------------------------------------------------------------------
+cat >"$TMP/zeros.conf" <<'CFG'
+DPI=0160
+FPS=015
+BLACKOUT_TIMEOUT=015
+ADB_TIMEOUT=04
+POLL_INTERVAL=02
+LOG_MAX_BYTES=01048576
+LOG_KEEP=05
+CFG
+
+run_daemon "$TMP/zeros.conf" --dump-config "$TMP/zeros.out" "$TMP/zeros.err"
+check_contains "$TMP/zeros.out" '^DPI=160$' "DPI com zero à esquerda normalizado"
+check_contains "$TMP/zeros.out" '^FPS=15$' "FPS com zero à esquerda normalizado"
+check_contains "$TMP/zeros.out" '^BLACKOUT_TIMEOUT=15$' "BLACKOUT_TIMEOUT normalizado"
+check_contains "$TMP/zeros.out" '^ADB_TIMEOUT=4$' "ADB_TIMEOUT normalizado"
+check_contains "$TMP/zeros.out" '^POLL_INTERVAL=2$' "POLL_INTERVAL normalizado"
+check_contains "$TMP/zeros.out" '^LOG_MAX_BYTES=1048576$' "LOG_MAX_BYTES normalizado"
+check_contains "$TMP/zeros.out" '^LOG_KEEP=5$' "LOG_KEEP normalizado"
+
+# ---------------------------------------------------------------------------
+# 5. O template entregue em etc/rios/config é válido.
 # ---------------------------------------------------------------------------
 if run_daemon "${ROOT}/etc/rios/config" --check-config "$TMP/tpl.out" "$TMP/tpl.err"; then
   ok "template etc/rios/config é válido"
@@ -149,7 +171,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Argumento inválido de linha de comando.
+# 6. Argumento inválido de linha de comando.
 # ---------------------------------------------------------------------------
 if RIOS_LOG_DIR="$TMP/log" RIOS_STATE_DIR="$TMP/run" \
      "$DAEMON" --max-cycles abc >/dev/null 2>&1; then
