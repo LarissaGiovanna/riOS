@@ -469,6 +469,9 @@ prepare_device() {
   if ! apply_android_settings; then
     warn "alguns settings globais falharam (seguindo mesmo assim)"
   fi
+  # Remove overlay deixado por uma sessão B interrompida (ex.: cabo arrancado
+  # antes do cleanup). Sem isso, o próximo método A herdaria um display extra.
+  adb_cmd shell settings delete global overlay_display_devices >/dev/null 2>&1 || true
   status_write
   return 0
 }

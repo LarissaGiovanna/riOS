@@ -147,6 +147,15 @@ check_contains "$TMP/adb.log" 'enable_freeform_support' "setting enable_freeform
 check_contains "$TMP/adb.log" 'force_desktop_mode_on_external_displays' "setting force_desktop_mode aplicado"
 check_contains "$TMP/adb.log" 'enable_non_resizable_multi_window' "setting enable_non_resizable aplicado"
 
+# O overlay é limpo no prepare (o unplug deixa o aparelho sem transporte para
+# o cleanup falar com ele).
+OVERLAY_DELETES="$(grep -c 'settings delete global overlay_display_devices' "$TMP/adb.log" 2>/dev/null || true)"
+if [[ "${OVERLAY_DELETES:-0}" -ge 1 ]]; then
+  ok "overlay_display_devices limpo no prepare"
+else
+  bad "nenhuma limpeza de overlay no prepare"
+fi
+
 # O daemon voltou a IDLE.
 if [[ -r "$STATUS" ]]; then
   check_contains "$STATUS" '^STATE=IDLE$' "status final STATE=IDLE"
