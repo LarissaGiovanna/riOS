@@ -92,6 +92,8 @@ mantém os dois caminhos separados (ver [`PLAN.md`](PLAN.md) §9.1.1).
 - [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — sintoma → causa → solução.
 - [`docs/revisao-p2.md`](docs/revisao-p2.md) — revisão do daemon/CLI, achados,
   correções e roteiro de validação no aparelho real.
+- [`docs/pendencias-p2.md`](docs/pendencias-p2.md) — resumo do que ainda falta na
+  frente P2 (validação, empacotamento e artigo).
 - [`docs/BUILD.md`](docs/BUILD.md) — construção da imagem e gravação.
 
 ## Testes sem celular
