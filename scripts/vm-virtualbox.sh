@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vm-virtualbox.sh — cria e opera a VM de bancada do DeX Station (Eee PC 1015BX)
+# vm-virtualbox.sh — cria e opera a VM de bancada do riOS (Eee PC 1015BX)
 #
 # uso:
 #   vm-virtualbox.sh vazio                 cria a VM com disco vazio (instalar Debian)
@@ -16,7 +16,7 @@
 # variáveis: VM (nome), RAM, CPUS, CAP, VDI_DIR, DISK_MB
 set -euo pipefail
 
-VM="${VM:-dex-station}"
+VM="${VM:-rios}"
 RAM="${RAM:-1536}"
 CPUS="${CPUS:-2}"
 CAP="${CAP:-70}"

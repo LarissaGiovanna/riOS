@@ -1,4 +1,4 @@
-# DeX Station OS
+# riOS
 
 Transforma um netbook antigo — o **Asus Eee PC 1015BX** — numa **estação DeX dedicada**.
 O celular Samsung faz todo o processamento; o netbook serve apenas como **tela, teclado e
@@ -69,9 +69,9 @@ mantém os dois caminhos separados (ver [`PLAN.md`](PLAN.md) §9.1.1).
 | Fase | Conteúdo | Estado |
 |---|---|---|
 | M0 | Plano de desenvolvimento | ✅ [`PLAN.md`](PLAN.md) |
-| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | ⬜ |
+| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | 🔄 Em andamento |
 | M2 | Validação no aparelho real (DeX + teclado/trackpad) | ⬜ |
-| M3 | Build da imagem (`dex-station.img`) | ⬜ |
+| M3 | Build da imagem (`rios.img`) | ⬜ |
 | M4 | Live USB | ⬜ |
 | M5 | Instalação no HD | ⬜ |
 | M6 | Calibração de performance + documentação | ⬜ |
@@ -80,14 +80,14 @@ mantém os dois caminhos separados (ver [`PLAN.md`](PLAN.md) §9.1.1).
 ## Por onde começar
 
 1. Ler [`PLAN.md`](PLAN.md) — arquitetura, riscos, matriz de testes e roadmap.
-2. **M1**: implementar `runtime/dex-station-session` e rodar **no Void Linux que já está
+2. **M1**: implementar `runtime/rios-session` e rodar **no Void Linux que já está
    instalado no netbook** (`xbps-install -S android-tools scrcpy`, serviço em `/etc/sv`).
    O ciclo de teste cai de horas (build de imagem) para minutos.
 3. **M2**: repetir com o celular conectado de verdade.
 
 ## Variantes de entrega
 
-As duas variantes usam **a mesma** `dex-station.img`. Muda só o destino da gravação:
+As duas variantes usam **a mesma** `rios.img`. Muda só o destino da gravação:
 
 - **Live USB** — `scripts/make-live-usb.sh`: grava a imagem num pendrive. O HD do netbook
   não é tocado, nada é instalado. É o modo recomendado para testar.

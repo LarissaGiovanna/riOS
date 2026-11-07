@@ -1,11 +1,11 @@
 # Simulando o Eee PC 1015BX no VirtualBox
 
-**Projeto DeX Station — guia de bancada para testar sem o netbook**
+**Projeto riOS — guia de bancada para testar sem o netbook**
 
 Versão 1.0 · 03/11/2026 · Asus Eee PC 1015BX + Samsung Galaxy S24
 
 > **Para que serve este guia.** O netbook físico está temporariamente indisponível. Enquanto
-> ele não volta, a distro modificada (imagem Debian 13 + LXQt + o daemon `dex-station-session`)
+> ele não volta, a distro modificada (imagem Debian 13 + LXQt + o daemon `rios-session`)
 > pode ser testada numa máquina virtual com parâmetros equivalentes aos do 1015BX. Este
 > documento vai da instalação do VirtualBox até o roteiro de testes, e diz em cada etapa o
 > que o resultado vale — e o que **não** vale.
@@ -138,7 +138,7 @@ Dois pontos que costumam confundir:
 
 ### 5.1 Pela interface gráfica
 
-1. **Novo** → nome `dex-station`, tipo *Linux*, versão *Debian (64-bit)*.
+1. **Novo** → nome `rios`, tipo *Linux*, versão *Debian (64-bit)*.
 2. Memória **1536 MB**; processadores **2**; marque *Habilitar EFI*.
 3. Disco: *Criar um disco virtual agora* → VDI, **40 GB**, alocação dinâmica.
 4. **Configurações → Sistema → Placa-mãe**: chipset PIIX3, EFI marcado; **Processador**:
@@ -156,11 +156,11 @@ O repositório traz `scripts/vm-virtualbox.sh`, que faz tudo isso de forma repet
 
 ```bash
 # a partir da raiz do repositório (o caminho tem espaços: use aspas)
-cd "/caminho/para/dex-station"
+cd "/caminho/para/rios"
 chmod +x scripts/vm-virtualbox.sh
 
 # opção A: testar a imagem já gerada pelo build
-./scripts/vm-virtualbox.sh imagem build/dex-station.img
+./scripts/vm-virtualbox.sh imagem build/rios.img
 
 # opção B: começar de um disco vazio e instalar Debian do zero
 ./scripts/vm-virtualbox.sh vazio
@@ -175,8 +175,8 @@ chmod +x scripts/vm-virtualbox.sh
 O script aceita variáveis de ambiente para ajustar o perfil:
 
 ```bash
-VM=dex-teste RAM=2048 CPUS=2 CAP=100 \
-  ./scripts/vm-virtualbox.sh imagem build/dex-station.img
+VM=rios-teste RAM=2048 CPUS=2 CAP=100 \
+  ./scripts/vm-virtualbox.sh imagem build/rios.img
 ```
 
 `CAP` é o limite de execução da CPU (em %). 70% é um bom ponto de partida para aproximar a
@@ -187,7 +187,7 @@ velocidade do C-60; com 100% a VM fica rápida demais para qualquer comparação
 Se preferir entender (ou reproduzir na mão), a sequência é esta:
 
 ```bash
-VM=dex-station
+VM=rios
 
 VBoxManage createvm --name "$VM" --ostype Debian_64 --register
 VBoxManage modifyvm "$VM" \
@@ -205,17 +205,17 @@ VBoxManage storagectl "$VM" --name SATA --add sata \
   --controller IntelAhci --portcount 2 --hostiocache off
 
 # disco vazio de 40 GB (só na opção B)
-VBoxManage createmedium disk --filename ~/VMs/dex-station.vdi \
+VBoxManage createmedium disk --filename ~/VMs/rios.vdi \
   --size 40960 --variant Standard
 VBoxManage storageattach "$VM" --storagectl SATA --port 0 --device 0 \
-  --type hdd --medium ~/VMs/dex-station.vdi
+  --type hdd --medium ~/VMs/rios.vdi
 ```
 
 Para a opção A, o disco não é criado: a imagem crua é **convertida** em VDI.
 
 ```bash
-VBoxManage convertfromraw build/dex-station.img \
-  ~/VMs/dex-station.vdi --format VDI
+VBoxManage convertfromraw build/rios.img \
+  ~/VMs/rios.vdi --format VDI
 ```
 
 > **Cuidado:** não use `VBoxManage modifymedium --resize` numa imagem que já tem tabela GPT
@@ -230,7 +230,7 @@ VBoxManage convertfromraw build/dex-station.img \
 Esta é a rota que valida o artefato de verdade: a mesma imagem que iria para o pendrive ou
 para o HD.
 
-1. Crie a VM com `./scripts/vm-virtualbox.sh imagem build/dex-station.img`.
+1. Crie a VM com `./scripts/vm-virtualbox.sh imagem build/rios.img`.
 2. Inicie. A VM entra no **GRUB** direto, porque a imagem tem `EFI/BOOT/BOOTX64.EFI` gravado
    com `grub-install --removable`.
 3. Se aparecer o **shell do EFI** em vez do GRUB, digite:
@@ -284,15 +284,15 @@ O teste T8 exige provar que o pendrive não altera o disco interno. Na VM isso �
 # disco "HD" (o que não pode mudar) + imagem do projeto como disco de boot
 ./scripts/vm-virtualbox.sh vazio            # cria o disco de 40 GB (sda)
 # anexe a imagem convertida como segundo disco
-VBoxManage convertfromraw build/dex-station.img ~/VMs/dex-live.vdi --format VDI
-VBoxManage storageattach dex-station --storagectl SATA --port 1 --device 0 \
-  --type hdd --medium ~/VMs/dex-live.vdi
+VBoxManage convertfromraw build/rios.img ~/VMs/rios-live.vdi --format VDI
+VBoxManage storageattach rios --storagectl SATA --port 1 --device 0 \
+  --type hdd --medium ~/VMs/rios-live.vdi
 ```
 
 Antes de ligar, tire os checksums do disco "HD":
 
 ```bash
-sha256sum ~/VMs/dex-station.vdi > /tmp/antes.sha256
+sha256sum ~/VMs/rios.vdi > /tmp/antes.sha256
 ```
 
 Depois do teste, desligue a VM e compare:
@@ -366,10 +366,10 @@ está sem NTP. Só não copie a data da VM para o documento sem conferir o fuso
 Dependendo da fase do projeto, o daemon roda como serviço ou como autostart:
 
 ```bash
-systemctl status dex-station       # imagem Debian
-sv status dex-station              # se estiver testando no Void
-dex-station-launch status          # CLI do próprio projeto
-journalctl -u dex-station -f       # acompanhar em tempo real
+systemctl status rios              # imagem Debian
+sv status rios                     # se estiver testando no Void
+rios-launch status                 # CLI do próprio projeto
+journalctl -u rios -f              # acompanhar em tempo real
 ```
 
 ### 7.6 Guest Additions: não instale na imagem de teste
@@ -406,7 +406,7 @@ adb shell getprop ro.product.model        # deve responder SM-S921B
 4. Confirme que o daemon viu o aparelho:
 
 ```bash
-journalctl -u dex-station -n 30
+journalctl -u rios -n 30
 ```
 
 > **A pegadinha:** a porta de pareamento muda a cada vez e o Android desliga a depuração sem
@@ -429,7 +429,7 @@ Pré-requisitos: Extension Pack instalado, usuário no grupo `vboxusers` e contr
 
 ```bash
 VBoxManage list usbhost | grep -A4 -i samsung   # descubra VendorId/ProductId
-VBoxManage usbfilter add 0 --target dex-station \
+VBoxManage usbfilter add 0 --target rios \
   --name "Galaxy S24" --vendorid 04e8 --productid 6860
 ```
 
@@ -454,7 +454,7 @@ case "$1" in
 esac
 EOF
 chmod +x /tmp/fakebin/adb
-PATH=/tmp/fakebin:$PATH dex-station-launch start
+PATH=/tmp/fakebin:$PATH rios-launch start
 ```
 
 Assim você valida a máquina de estados, o hotplug lógico e as mensagens de erro sem depender
@@ -475,9 +475,9 @@ do celular — e sem gastar a bateria dele.
 Limite de banda de disco (opcional; confira a sintaxe na sua versão):
 
 ```bash
-VBoxManage bandwidthctl dex-station add LimiteDisco --limit 25
-VBoxManage storageattach dex-station --storagectl SATA --port 0 --device 0 \
-  --type hdd --medium ~/VMs/dex-station.vdi --bandwidthgroup LimiteDisco
+VBoxManage bandwidthctl rios add LimiteDisco --limit 25
+VBoxManage storageattach rios --storagectl SATA --port 0 --device 0 \
+  --type hdd --medium ~/VMs/rios.vdi --bandwidthgroup LimiteDisco
 ```
 
 > **Teste que a VM faz melhor que o netbook:** "e quando não existe bateria?". No guest,
@@ -503,7 +503,7 @@ quanto o resultado vale.
 | T10 — instalação no HD | recriar o VDI do zero e repetir o script | Sim |
 | T11 — performance | `free -m`, `top -b -n1`, 30 min | **Não**: números otimistas |
 | T12 — energia | — | **Não reproduzível** |
-| T13 — recuperação | `sudo chvt 2`, `dex-station restart` | Sim |
+| T13 — recuperação | `sudo chvt 2`, `rios restart` | Sim |
 | T14 — autonomia | 30 min sem celular | Parcial (sem bateria) |
 
 Comandos úteis para as medições que **são** válidas:
@@ -512,7 +512,7 @@ Comandos úteis para as medições que **são** válidas:
 free -m                                   # cabe no orçamento de 1,5 GiB?
 ps -eo rss,comm --sort=-rss | head -12    # quem está comendo a RAM
 systemd-analyze blame | head -10          # o que atrasa o boot
-journalctl -u dex-station -b --no-pager   # o que o daemon fez nesta sessão
+journalctl -u rios -b --no-pager          # o que o daemon fez nesta sessão
 ```
 
 Para T6 sem cabo, simule a desconexão pelo `adb` — é o mesmo evento que o daemon enxerga:
@@ -538,7 +538,7 @@ sudo chvt 7      # volta para o gráfico
 | Cai no shell do EFI sempre | falta `EFI/BOOT/BOOTX64.EFI` na imagem | refaça o `grub-install --removable` na imagem |
 | Tela preta depois do GRUB | driver/controlador de vídeo | troque VMSVGA ↔ VBoxSVGA, mantenha 3D off; teste `nomodeset` |
 | Resolução presa em 800×600 | sem Guest Additions e sem modeline | §7.1 |
-| Mouse "preso" ou sem integração | dispositivo apontador | `VBoxManage modifyvm dex-station --mouse usbtablet` |
+| Mouse "preso" ou sem integração | dispositivo apontador | `VBoxManage modifyvm rios --mouse usbtablet` |
 | `adb devices` vazio | rede da VM em NAT, celular em outra faixa | use bridge (§5.1) ou USB (§8.2) |
 | `adb` diz `offline` | depuração sem fio caiu | `adb kill-server`, parear de novo |
 | USB do celular não aparece | Extension Pack ou grupo | instale o extpack, `usermod -aG vboxusers`, relogue |
@@ -550,8 +550,8 @@ sudo chvt 7      # volta para o gráfico
 Para diagnosticar boot sem interface, use a janela em modo *headless* e tire uma captura:
 
 ```bash
-VBoxManage startvm dex-station --type headless
-VBoxManage controlvm dex-station screenshotpng /tmp/tela.png
+VBoxManage startvm rios --type headless
+VBoxManage controlvm rios screenshotpng /tmp/tela.png
 ```
 
 ## 12. Snapshots e rotina de bancada
@@ -576,7 +576,7 @@ Evidências que valem anexar no relatório:
 
 ```bash
 journalctl -b --no-pager > /tmp/t4-journal.txt
-VBoxManage showvminfo dex-station > /tmp/t4-vminfo.txt
+VBoxManage showvminfo rios > /tmp/t4-vminfo.txt
 ```
 
 ## 13. O que o método não prova
@@ -618,10 +618,10 @@ O arquivo `scripts/vm-virtualbox.sh` do repositório implementa tudo o que foi d
 
 ```bash
 #!/usr/bin/env bash
-# vm-virtualbox.sh — cria e opera a VM de bancada do DeX Station (Eee PC 1015BX)
+# vm-virtualbox.sh — cria e opera a VM de bancada do riOS (Eee PC 1015BX)
 set -euo pipefail
 
-VM="${VM:-dex-station}"
+VM="${VM:-rios}"
 RAM="${RAM:-1536}"
 CPUS="${CPUS:-2}"
 CAP="${CAP:-70}"
@@ -744,10 +744,10 @@ esac
 ```bash
 # --- VirtualBox ---
 VBoxManage list vms                       # VMs registradas
-VBoxManage showvminfo dex-station         # configuração completa
-VBoxManage snapshot dex-station list      # snapshots existentes
-VBoxManage controlvm dex-station screenshotpng /tmp/tela.png
-VBoxManage controlvm dex-station usbattach <uuid>   # plugar o celular
+VBoxManage showvminfo rios                # configuração completa
+VBoxManage snapshot rios list             # snapshots existentes
+VBoxManage controlvm rios screenshotpng /tmp/tela.png
+VBoxManage controlvm rios usbattach <uuid>   # plugar o celular
 VBoxManage list usbhost                   # dispositivos disponíveis no host
 
 # --- guest (imagem Debian) ---
@@ -755,11 +755,11 @@ xrandr                                    # saídas e modos
 adb devices && adb shell getprop ro.product.model
 scrcpy --new-display=1024x600/160 --max-fps=15 --no-audio
 free -m && ps -eo rss,comm --sort=-rss | head
-journalctl -u dex-station -b --no-pager
+journalctl -u rios -b --no-pager
 
 # --- evidências ---
 journalctl -b --no-pager > /tmp/journal.txt
-VBoxManage showvminfo dex-station > /tmp/vminfo.txt
+VBoxManage showvminfo rios > /tmp/vminfo.txt
 ```
 
 ## Apêndice C — referências
@@ -769,4 +769,4 @@ VBoxManage showvminfo dex-station > /tmp/vminfo.txt
 - Debian 13 "trixie" — guia de instalação: <https://www.debian.org/releases/trixie/>
 - scrcpy — display virtual e opções: <https://github.com/Genymobile/scrcpy>
 - Android — depuração sem fio: <https://developer.android.com/tools/adb>
-- Projeto DeX Station — `PLAN.md` (§8, §9.1.1, §11), `docs/ambiente-de-testes.md`
+- Projeto riOS — `PLAN.md` (§8, §9.1.1, §11), `docs/ambiente-de-testes.md`

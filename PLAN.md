@@ -1,4 +1,4 @@
-# DeX Station OS — Plano de Desenvolvimento
+# riOS — Plano de Desenvolvimento
 
 **Alvo:** Asus Eee PC 1015BX — AMD C-60 (2 núcleos, 1,0 GHz, turbo 1,33 GHz, x86-64), APU
 Radeon HD 6290, 2 GB DDR3 (**1,5 GiB visíveis**, após a reserva de vídeo), tela 10,1" 1024×600,
@@ -66,8 +66,8 @@ Duas variantes saem da **mesma** imagem:
 
 | Variante | Artefato | Uso |
 |---|---|---|
-| **A — Live USB** | `dex-station.img` gravado num pendrive | Testar sem tocar no HD do netbook |
-| **B — Instalação no HD** | `dex-station.img` gravado no disco interno | Sistema dedicado permanente |
+| **A — Live USB** | `rios.img` gravado num pendrive | Testar sem tocar no HD do netbook |
+| **B — Instalação no HD** | `rios.img` gravado no disco interno | Sistema dedicado permanente |
 
 A diferença entre as variantes é **o alvo da gravação**, não o conteúdo da imagem (§7 e §8).
 
@@ -191,7 +191,7 @@ Levantado com `scripts/coleta-ambiente.sh`; documento completo em `docs/ambiente
 │    ├─ zram swap            ├─ zram (zramen)                │
 │    ├─ SDDM → autologin usuário `dex` → sessão LXQt         │
 │    │     └─ autostart (ou serviço) chamando o daemon       │
-│    │           └─ dex-station-session (daemon do kiosk)    │
+│    │           └─ rios-session (daemon do kiosk)           │
 │    │                 ├─ consulta adb (2 s)                 │
 │    │                 ├─ aplica settings globais do Android │
 │    │                 ├─ método A: scrcpy --new-display     │
@@ -206,7 +206,7 @@ Levantado com `scripts/coleta-ambiente.sh`; documento completo em `docs/ambiente
 ```
 
 O **daemon é o mesmo** nos dois ambientes; só o invólucro muda: unit do systemd na imagem,
-serviço de runit em `/etc/sv/dex-station/` na bancada.
+serviço de runit em `/etc/sv/rios/` na bancada.
 
 ### Fluxo de boot
 
@@ -214,7 +214,7 @@ serviço de runit em `/etc/sv/dex-station/` na bancada.
 2. O sistema cria swap comprimido na RAM — `systemd-zram-generator` na imagem, `zramen` no
    Void. **Nota:** a instalação atual ainda está sem zram e com 7,8 GB de swap no HDD.
 3. SDDM faz autologin do usuário `dex` e abre a sessão LXQt.
-4. O daemon `dex-station-session` sobe e mostra a **tela de espera**: papel de parede com
+4. O daemon `rios-session` sobe e mostra a **tela de espera**: papel de parede com
    instruções e um atalho de terminal.
 5. Loop: a cada 2 s, `adb devices`. Se houver aparelho autorizado, inicia a sessão DeX.
 
@@ -259,7 +259,7 @@ IDLE ──(celular autorizado)──► PREPARING ──(ok)──► RUNNING
 
 **Objetivo:** testar o sistema inteiro sem instalar nada no HD do netbook.
 
-- Artefato: a **mesma** `dex-station.img` (~2,5–3 GB), gravada em pendrive USB 2.0+ de
+- Artefato: a **mesma** `rios.img` (~2,5–3 GB), gravada em pendrive USB 2.0+ de
   **8 GB ou mais** (4 GB é apertado porque a imagem cresce com LXQt e firmware).
 - Boot: ligar o netbook segurando **Esc** e escolher a unidade USB. Como o firmware é
   **UEFI**, o pendrive só aparece se tiver a entrada `EFI/BOOT/BOOTX64.EFI` — que é
@@ -304,7 +304,7 @@ Sequência obrigatória:
 6. `update-initramfs -u` e:
    ```bash
    grub-install --target=x86_64-efi --efi-directory=/boot/efi \
-                --bootloader-id=dex-station --removable --no-nvram
+                --bootloader-id=rios --removable --no-nvram
    grub-mkconfig -o /boot/grub/grub.cfg
    ```
    `--removable` grava `EFI/BOOT/BOOTX64.EFI` (funciona sem entrada na NVRAM, essencial para
@@ -315,10 +315,10 @@ Sequência obrigatória:
 
 ## 9. Componentes a desenvolver
 
-### 9.1 `runtime/dex-station-session` (daemon do kiosk)
+### 9.1 `runtime/rios-session` (daemon do kiosk)
 
 - **Linguagem**: Bash com `set -euo pipefail` (sem dependência de Python).
-- **Entrada**: `/etc/dex-station/config` (KEY=VALUE) + flags de linha de comando.
+- **Entrada**: `/etc/rios/config` (KEY=VALUE) + flags de linha de comando.
 - **Responsabilidades**:
   1. Consultar `adb devices` a cada 2 s, com `timeout` de 4 s por chamada e espera pela
      autorização RSA (mensagem na tela).
@@ -329,11 +329,11 @@ Sequência obrigatória:
   6. Cadeia de fallback A → B → C.
   7. Limpeza no unplug/desligamento: `settings delete global overlay_display_devices`,
      encerrar o scrcpy, restaurar a tela de espera.
-  8. Log: **arquivo rotativo** em `/var/log/dex-station/` (funciona em runit e systemd) e,
+  8. Log: **arquivo rotativo** em `/var/log/rios/` (funciona em runit e systemd) e,
       quando houver systemd, espelho no journal via `systemd-cat`. `svlogd` no Void.
 - **Sem dependência de init**: o script não chama `systemctl`. Quem liga/desliga é o invólucro
-  (`/etc/sv/dex-station/run` no Void; unit no Debian).
-- **Configuração** (`/etc/dex-station/config`):
+  (`/etc/sv/rios/run` no Void; unit no Debian).
+- **Configuração** (`/etc/rios/config`):
   ```
   METHOD=auto            # auto | new-display | overlay | mirror
   RESOLUTION=auto        # auto | 1024x600
@@ -361,8 +361,8 @@ O M1 roda na instalação que já existe, sem trocar de sistema. Diferenças em 
 | Item | Na imagem (Debian) | Na bancada (Void) |
 |---|---|---|
 | Pacotes | `apt install adb scrcpy` | `xbps-install -S android-tools scrcpy` (confira o nome com `xbps-query -Rs scrcpy`) |
-| Serviço | unit `dex-station.service` | `/etc/sv/dex-station/run` + `ln -s /etc/sv/dex-station /var/service/` |
-| Log | journal + arquivo | `svlogd` em `/var/log/dex-station/` |
+| Serviço | unit `rios.service` | `/etc/sv/rios/run` + `ln -s /etc/sv/rios /var/service/` |
+| Log | journal + arquivo | `svlogd` em `/var/log/rios/` |
 | zram | `systemd-zram-generator` | pacote `zramen` (ou seguir com o swap em disco e anotar a diferença) |
 | Usuário/grupos | `dex` | usuário atual + grupos `audio video input` (`usermod -aG`) |
 
@@ -371,13 +371,13 @@ Exemplo de `run` (runit):
 ```sh
 #!/bin/sh
 exec 2>&1
-exec chpst -u larissa /usr/local/bin/dex-station-session
+exec chpst -u larissa /usr/local/bin/rios-session
 ```
 
-O `dex-station-launch` deve detectar o init (`/run/systemd/system` vs `/etc/sv`) para escolher
+O `rios-launch` deve detectar o init (`/run/systemd/system` vs `/etc/sv`) para escolher
 `systemctl` ou `sv` — assim o mesmo comando serve nas duas fases.
 
-### 9.2 `runtime/dex-station-launch`
+### 9.2 `runtime/rios-launch`
 
 - Wrapper fino com subcomandos: `start`, `stop`, `status`, `shell`, `logs`, `restart`.
 - `status` mostra: aparelho conectado, resolução, método em uso, PID do scrcpy, CPU e RAM.
@@ -388,13 +388,13 @@ O `dex-station-launch` deve detectar o init (`/run/systemd/system` vs `/etc/sv`)
   (`Terminal`, `Reiniciar sessão`).
 - Atalho global `Alt+T` → terminal (via LXQt Global Shortcuts ou `xbindkeys`).
 
-### 9.4 `build/build-dex-station.sh`
+### 9.4 `build/build-rios.sh`
 
-- Gera `dex-station.img` a partir de um host x86_64 Debian/Ubuntu — **na prática, o PC de
+- Gera `rios.img` a partir de um host x86_64 Debian/Ubuntu — **na prática, o PC de
   bancada (Linux Mint)**, não o netbook: o netbook roda Void, tem 1,5 GiB de RAM e HDD lento.
 - Etapas: `debootstrap` trixie → `chroot` → `post-install.sh` → `update-initramfs` →
   particionamento **GPT + ESP** no arquivo de imagem (via *loop device*) →
-  `grub-install --target=x86_64-efi --removable --no-nvram` → `sync` → fechamento da imagem.
+  `grub-install --target=x86_64-efi --removable --no-nvram --bootloader-id=rios` → `sync` → fechamento da imagem.
 - **Rastreabilidade**: `SHA256SUMS` do artefato + versões fixadas (scrcpy, adb, kernel) em
   `build/VERSIONS.lock`. O build é **repetível**, não bit-a-bit reproduzível (debootstrap e
   `apt` gravam timestamps e estados próprios).
@@ -403,7 +403,7 @@ O `dex-station-launch` deve detectar o init (`/run/systemd/system` vs `/etc/sv`)
 
 - Pacotes: `linux-image-amd64 systemd-sysv lxqt sddm adb xdg-utils xbindkeys
   x11-xserver-utils xserver-xorg-video-radeon firmware-amd-graphics
-  zram-tools|systemd-zram-generator wget ca-certificates`.
+  systemd-zram-generator wget ca-certificates chrony`.
   **Não** incluir `firmware-brcm80211`: o Wi-Fi medido é Atheros AR9285 (`ath9k`), que não
   usa firmware proprietário.
 - **scrcpy**: baixa o tarball oficial `scrcpy-linux-x86_64-v<VER>.tar.gz`, confere o SHA-256,
@@ -413,9 +413,9 @@ O `dex-station-launch` deve detectar o init (`/run/systemd/system` vs `/etc/sv`)
 - **SDDM**: `/etc/sddm.conf.d/10-autologin.conf` → `[Autologin] User=dex`,
   `Session=lxqt.desktop`, `Relogin=false`. (Alternativa mais leve, se a RAM apertar:
   `lightdm` ou `startx` via `getty@tty1`.)
-- **Autostart**: `~dex/.config/autostart/dex-station.desktop` → `Exec=dex-station-session`.
-- **Limpeza no desligamento**: `dex-station-cleanup.service` (`Type=oneshot`,
-  `RemainAfterExit=yes`, `ExecStop=/usr/local/lib/dex-station/cleanup.sh`,
+- **Autostart**: `~dex/.config/autostart/rios.desktop` → `Exec=rios-session`.
+- **Limpeza no desligamento**: `rios-cleanup.service` (`Type=oneshot`,
+  `RemainAfterExit=yes`, `ExecStop=/usr/local/lib/rios/cleanup.sh`,
   `WantedBy=multi-user.target`) — `ExecStop` roda no `systemctl poweroff/reboot`.
 - **Higiene**: desabilitar `cups`, `avahi-daemon`, `modemmanager`, `packagekit`, timers
   `apt-daily*`, `fstrim.timer` (HDD não suporta TRIM), automount do leitor de SD (busca
@@ -426,12 +426,12 @@ O `dex-station-launch` deve detectar o init (`/run/systemd/system` vs `/etc/sv`)
   animações, fundo sóbrio.
 - **zram**: `/etc/systemd/zram-generator.conf` → `zram-size=min(ram/2, 1G)`.
 - **Locale**: `pt_BR.UTF-8` + `LANG=pt_BR.UTF-8`.
-- **Hostname**: `dex-station`.
+- **Hostname**: `rios`.
 
 ### 9.6 `build/overlay/`
 
 - `fstab` (UUID + `noatime` + `errors=remount-ro`).
-- `99-dex-station.rules` (udev: vendor Samsung `04e8`; permissões sem root — otimização v2).
+- `99-rios.rules` (udev: vendor Samsung `04e8`; permissões sem root — otimização v2).
 - `10-autologin.conf` (SDDM).
 - `journald.conf` (`Storage=persistent` com `SystemMaxUse=32M` — em HDD, 32 MB de log é
   barato e salva o diagnóstico depois de um travamento).
@@ -505,7 +505,7 @@ hardware melhor.
 | T10 | Instalação HD | backup gerado; imagem gravada; GRUB instalado; boot pelo HD |
 | T11 | Performance | CPU < 60% e RAM < 450 MB em repouso por 30 min; **1,5 GiB no total**; sem travamento |
 | T12 | Energia | celular carregando via hub alimentado; temperatura estável; **bateria do netbook já em 55%** |
-| T13 | Recuperação | `Ctrl+Alt+F2` → TTY; `dex-station restart`; saída de emergência (systemd ou runit) |
+| T13 | Recuperação | `Ctrl+Alt+F2` → TTY; `rios restart`; saída de emergência (systemd ou runit) |
 | T14 | Autonomia | sem celular: não trava, não reinicia, tela de espera persistente |
 
 ---
@@ -535,9 +535,9 @@ hardware melhor.
 | Fase | Entregável | Depende de |
 |---|---|---|
 | **M0** | Este plano + esqueleto do repositório | — |
-| **M1** | `dex-station-session` + `dex-station-launch` funcionando **no Void/runit atual**, com adb/scrcpy instalados por `xbps` | M0 |
+| **M1** | `rios-session` + `rios-launch` funcionando **no Void/runit atual**, com adb/scrcpy instalados por `xbps` | M0 |
 | **M2** | Validação no aparelho real: DeX virtual + entrada (T3–T7) | M1 + celular |
-| **M3** | `build-dex-station.sh` + `post-install.sh` + overlay → `dex-station.img` | M2 |
+| **M3** | `build-rios.sh` + `post-install.sh` + overlay → `rios.img` | M2 |
 | **M4** | `make-live-usb.sh` → boot pelo pendrive (T8, T9, T14) | M3 |
 | **M5** | `install-on-disk.sh` + backup/restore → instalação no HD (T10) | M4 |
 | **M6** | Calibração fina (T11, T12), matriz de fallback, documentação | M5 |
@@ -552,17 +552,17 @@ depois que a parte difícil está provada.
 ## 14. Estrutura do repositório
 
 ```
-dex-station/
+dex-station/ (riOS)
 ├── PLAN.md                     # este documento
 ├── README.md                   # visão geral
 ├── build/
-│   ├── build-dex-station.sh    # debootstrap → imagem
+│   ├── build-rios.sh           # debootstrap → imagem
 │   ├── post-install.sh         # configuração dentro do chroot
 │   ├── VERSIONS.lock           # versões fixadas + SHA-256
 │   └── overlay/                # arquivos injetados na raiz da imagem
 ├── runtime/
-│   ├── dex-station-session     # daemon do kiosk
-│   ├── dex-station-launch      # CLI de controle
+│   ├── rios-session            # daemon do kiosk
+│   ├── rios-launch             # CLI de controle
 │   └── dex-wait-screen/        # tela de espera
 ├── scripts/
 │   ├── make-live-usb.sh
