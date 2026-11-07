@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# =============================================================================
+# tests/mock/adb — adb falso para testar o rios-session sem hardware
+#
+# Controlado por variáveis de ambiente:
+#   MOCK_ADB_STATE       device | unauthorized | offline | none  (padrão: device)
+#   MOCK_ADB_STATE_FILE  arquivo cujo conteúdo tem prioridade sobre MOCK_ADB_STATE
+#   MOCK_ADB_SEQUENCE    lista separada por vírgula consumida a cada `devices`
+#   MOCK_ADB_ANDROID     versão do Android (padrão: 16)
+#   MOCK_ADB_SDK         SDK do Android (padrão: 35)
+#   MOCK_ADB_LOCKED      1 simula celular bloqueado
+#   MOCK_ADB_DIR         diretório de estado/log (padrão: ${TMPDIR:-/tmp})
+#   MOCK_ADB_LOG         arquivo de log de chamadas
+# =============================================================================
+set -euo pipefail
+
+MOCK_DIR="${MOCK_ADB_DIR:-${TMPDIR:-/tmp}}"
+mkdir -p "$MOCK_DIR"
+LOG_FILE="${MOCK_ADB_LOG:-$MOCK_DIR/mock-adb.log}"
+COUNT_FILE="$MOCK_DIR/mock-adb-count"
+OVERLAY_FILE="$MOCK_DIR/mock-adb-overlay"
+
+# Registra a chamada para os testes poderem inspecionar o que foi executado.
+log_call() {
+  printf '%s adb %s\n' "$(date '+%H:%M:%S' 2>/dev/null || echo '--:--:--')" "$*" >>"$LOG_FILE" 2>/dev/null || true
+}
+
+log_call "$@"
+
+# Remove flags globais (-s serial, -d, -e etc.) para achar o subcomando.
+while (( $# > 0 )); do
+  case "$1" in
+    -s|-H|-P)
+      if (( $# >= 2 )); then shift; fi
+      shift
+      ;;
+    -d|-e|-t|-l)
+      shift
+      ;;
+    -*)
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+cmd="${1:-}"
+shift || true
+
+# Estado atual do aparelho (arquivo tem prioridade sobre a variável).
+state=""
+if [[ -n "${MOCK_ADB_STATE_FILE:-}" && -r "$MOCK_ADB_STATE_FILE" ]]; then
+  state="$(tr -d '[:space:]' <"$MOCK_ADB_STATE_FILE")"
+else
+  state="${MOCK_ADB_STATE:-device}"
+fi
+
+# Consome a sequência apenas em chamadas `devices`.
+if [[ "$cmd" == "devices" && -n "${MOCK_ADB_SEQUENCE:-}" ]]; then
+  IFS=',' read -r -a seq <<<"$MOCK_ADB_SEQUENCE"
+  idx=0
+  if [[ -f "$COUNT_FILE" ]]; then
+    idx="$(tr -dc '0-9' <"$COUNT_FILE" 2>/dev/null || echo 0)"
+    [[ -n "$idx" ]] || idx=0
+  fi
+  if (( idx < ${#seq[@]} )); then
+    state="${seq[$idx]}"
+    idx=$(( idx + 1 ))
+  else
+    state="${seq[${#seq[@]}-1]}"
+  fi
+  printf '%s\n' "$idx" >"$COUNT_FILE"
+fi
+
+case "$cmd" in
+  devices)
+    printf 'List of devices attached\n'
+    case "$state" in
+      device)       printf 'MOCK123456\tdevice\n' ;;
+      unauthorized) printf 'MOCK123456\tunauthorized\n' ;;
+      offline)      printf 'MOCK123456\toffline\n' ;;
+    esac
+    printf '\n'
+    ;;
+  get-state)
+    printf '%s\n' "$state"
+    ;;
+  wait-for-device)
+    exit 0
+    ;;
+  version)
+    printf 'Android Debug Bridge version 1.0.41 (mock riOS)\n'
+    ;;
+  shell)
+    if [[ "$state" != "device" ]]; then
+      printf 'error: device %s\n' "$state" >&2
+      exit 1
+    fi
+    sub="${1:-}"
+    shift || true
+    case "$sub" in
+      getprop)
+        prop="${1:-}"
+        case "$prop" in
+          ro.build.version.release) printf '%s\n' "${MOCK_ADB_ANDROID:-16}" ;;
+          ro.build.version.sdk)     printf '%s\n' "${MOCK_ADB_SDK:-35}" ;;
+          ro.product.model)         printf 'SM-MOCK\n' ;;
+          *)                        printf '\n' ;;
+        esac
+        ;;
+      settings)
+        action="${1:-}"
+        shift || true
+        namespace="${1:-}"
+        shift || true
+        key="${1:-}"
+        value="${2:-}"
+        case "$action" in
+          put)
+            if [[ "$key" == "overlay_display_devices" ]]; then
+              printf '%s\n' "$value" >"$OVERLAY_FILE"
+            fi
+            ;;
+          delete)
+            if [[ "$key" == "overlay_display_devices" ]]; then
+              rm -f "$OVERLAY_FILE"
+            fi
+            ;;
+          get)
+            if [[ "$key" == "overlay_display_devices" && -f "$OVERLAY_FILE" ]]; then
+              cat "$OVERLAY_FILE"
+            else
+              printf 'null\n'
+            fi
+            ;;
+        esac
+        exit 0
+        ;;
+      dumpsys)
+        if [[ "${MOCK_ADB_LOCKED:-0}" == "1" ]]; then
+          printf 'mDreamingLockscreen=true\nmShowingLockscreen=true\n'
+        else
+          printf 'mDreamingLockscreen=false\nmShowingLockscreen=false\n'
+        fi
+        ;;
+      *)
+        exit 0
+        ;;
+    esac
+    ;;
+  *)
+    exit 0
+    ;;
+esac

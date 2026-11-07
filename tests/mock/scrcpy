@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# =============================================================================
+# tests/mock/scrcpy — scrcpy falso para testar o rios-session sem hardware
+#
+# Variáveis:
+#   MOCK_SCRCPY_DURATION  segundos que a "janela" fica viva (padrão: 5)
+#   MOCK_SCRCPY_FAIL      1 faz o scrcpy falhar imediatamente
+#   MOCK_SCRCPY_LOG       arquivo de log (padrão: ${TMPDIR:-/tmp}/mock-scrcpy.log)
+# =============================================================================
+set -euo pipefail
+
+LOG_FILE="${MOCK_SCRCPY_LOG:-${TMPDIR:-/tmp}/mock-scrcpy.log}"
+mkdir -p "$(dirname -- "$LOG_FILE")" 2>/dev/null || true
+
+# Registra um evento (START/TERM/END/FAIL) para inspeção dos testes.
+log_event() {
+  printf '%s %s pid=%s args=%s\n' \
+    "$(date '+%H:%M:%S' 2>/dev/null || echo '--:--:--')" \
+    "$1" "$$" "${*:2}" >>"$LOG_FILE" 2>/dev/null || true
+}
+
+log_event START "$@"
+
+if [[ "${MOCK_SCRCPY_FAIL:-0}" == "1" ]]; then
+  log_event FAIL "$@"
+  printf 'scrcpy: falha simulada (MOCK_SCRCPY_FAIL=1)\n' >&2
+  exit 1
+fi
+
+# O sleep roda em segundo plano para que o sinal TERM interrompa o `wait`
+# imediatamente — assim o mock registra o encerramento feito pelo daemon.
+sleep "${MOCK_SCRCPY_DURATION:-5}" &
+SLEEP_PID=$!
+
+finish() {
+  kill "$SLEEP_PID" 2>/dev/null || true
+  log_event TERM "$@"
+  exit 0
+}
+trap finish TERM INT
+
+wait "$SLEEP_PID" || true
+log_event END "$@"
