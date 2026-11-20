@@ -96,7 +96,7 @@ Se `adb shell echo ok` não imprimir `ok`, o problema é **antes** do riOS.
 | Tela de espera some, mas nada aparece | Método A falhou e o B/C ainda está tentando | Espere `BLACKOUT_TIMEOUT`; veja `rios-launch logs` |
 | **Desbloqueie o celular** | Tela bloqueada | Desbloqueie; o DeX não sobe com o keyguard ativo |
 | **Atualize o Android para 15+** | Versão antiga | O display virtual do One UI 8 exige Android 15+ |
-| `scrcpy: unrecognized option '--new-display'` | scrcpy < 3.0 | Atualize para scrcpy 3.x |
+| `scrcpy: unrecognized option '--new-display'` | scrcpy < 3.0 | Atualize para scrcpy 5.0 (mínimo 3.0) |
 | `scrcpy não encontrado` | Pacote ausente | Instale o scrcpy |
 | Só o método C funciona (espelho) | O celular não aceita display virtual | Normal em alguns builds; o espelho é o plano C. Registre a versão do One UI |
 | Nenhum método funciona | Veja `scrcpy.log` | As causas mais comuns estão na seção 5 |

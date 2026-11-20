@@ -24,13 +24,14 @@ Samsung Galaxy (One UI 8 / Android 16)  ──cabo USB──►  Eee PC 1015BX
 | Portas | 3× USB 2.0, **HDMI** e **VGA** (ambas somente saída), Ethernet 10/100, leitor de cartão SD, P2 de áudio (fone/microfone) |
 | Rede | Ethernet + Wi-Fi Atheros AR9285 (`ath9k`, **sem firmware proprietário**) |
 | Firmware | **UEFI** (GPT + ESP), com CSM legado disponível — boot por USB com **Esc**, setup com **F2** |
-| Bateria | 6 células, ~86% da capacidade (3.766 de 4.400 mAh) |
+| Bateria | 6 células, ~86% de saúde (3.766 de 4.400 mAh); carga de 29% na coleta |
 | Teclado | ABNT2 nos modelos vendidos no Brasil |
 
 Consequências práticas desse hardware:
 
-- **1,5 GiB é o piso, não a folga.** O sistema é montado para caber num orçamento de
-  ~450–500 MB em repouso.
+- **1,5 GiB é o piso, não a folga.** O critério de aprovação do **T11** é **< 450 MB** em
+  repouso; o orçamento de projeto é **≤ 500 MB**. A folga de 50 MB cobre a variação entre
+  medições e a diferença de stack (bancada Xfce × imagem LXQt).
 - **Não existe entrada de vídeo.** O 1015BX tem HDMI e VGA, mas as duas são **saídas**:
   servem para mandar a imagem do netbook para um monitor/TV, não para receber a imagem do
   celular. Por isso o caminho de vídeo é USB (veja [`PLAN.md`](PLAN.md) §3).
@@ -43,7 +44,7 @@ Consequências práticas desse hardware:
 - **Bateria degradada (~86%) e já vista com pouca carga**, o hub alimentado deixa de ser
   opcional.
 
-## Estado atual da máquina (medido em 21/10/2026)
+## Estado atual da máquina (coleta de 21/10/2026 — data do relógio, não confiável)
 
 | Item | Valor |
 |---|---|
@@ -52,24 +53,26 @@ Consequências práticas desse hardware:
 | Pacotes | `xbps`; `adb` 36.0.1 e `scrcpy` 5.0 instalados; `ffmpeg` e Python 3.14 presentes |
 | Memória | 1,5 GiB total, ~1,1 GiB disponível, 470 MiB em uso |
 | Swap | 7,8 GB em partição do HDD, **sem zram** |
-| Sessão gráfica | `lightdm` (não SDDM), painel `LVDS` em 1024×600 |
-| Relógio | **sem NTP; atrasado 6 dias** — corrigir antes de qualquer medição datada |
+| Sessão gráfica | **Xfce 4.20** via `lightdm` (não SDDM), painel `LVDS` em 1024×600 |
+| Relógio | **sem NTP; atrasado 6 dias** — corrigir antes de qualquer medição datada (chrony do M1-01) |
 | Boot | UEFI com ESP de 256 MB em `/boot/efi` |
 
 O inventário completo (com as saídas de `lscpu`, `free`, `lsusb`, `lsblk`, `lspci`…) está em
 [`docs/ambiente-de-testes.md`](docs/ambiente-de-testes.md). Ele é gerado por
 `scripts/coleta-ambiente.sh` — use `--mascarar` antes de publicar.
 
-Consequência direta: o **M1 roda em Void/runit**, então os comandos da fase de bancada são
-`xbps-install` + `sv`, enquanto a imagem final (M3 em diante) usa Debian/systemd. O plano
-mantém os dois caminhos separados (ver [`PLAN.md`](PLAN.md) §9.1.1).
+Consequência direta: o **M1 roda em Void/runit/Xfce/lightdm**, então os comandos da fase de
+bancada são `xbps-install` + `sv`, enquanto a imagem final (M3 em diante) usa
+**Debian/systemd/LXQt/SDDM** (ou lightdm, conforme DEC-01). O plano mantém os dois caminhos
+separados (ver [`PLAN.md`](PLAN.md) §9.1.1) e toda comparação de desempenho precisa declarar
+qual stack foi medida.
 
 ## Status
 
 | Fase | Conteúdo | Estado |
 |---|---|---|
 | M0 | Plano de desenvolvimento | ✅ [`PLAN.md`](PLAN.md) |
-| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | 🔄 Em andamento — daemon/CLI validados com adb simulado; falta a bancada |
+| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | 🔄 Em andamento — daemon/CLI validados com adb simulado; falta o serviço runit e a bancada (M1-02) |
 | M2 | Validação no aparelho real (DeX + teclado/trackpad) | ⬜ |
 | M3 | Build da imagem (`rios.img`) | ⬜ |
 | M4 | Live USB | ⬜ |
@@ -133,8 +136,8 @@ Detalhes de cada procedimento em [`PLAN.md`](PLAN.md) §7 e §8.
 
 A porta USB 2.0 do 1015BX oferece **~500 mA**. Um Galaxy em uso com DeX consome mais do que
 isso, então **a bateria do netbook vai ser drenada** e o celular pode até descarregar
-devagar. A bateria deste netbook já está com **55% da capacidade original**, o que encurta
-ainda mais a autonomia. Soluções, em ordem de preferência:
+devagar. A bateria deste netbook está com **~86% de saúde (3.766/4.400 mAh)** e **29% de carga
+na coleta**, o que encurta ainda mais a autonomia. Soluções, em ordem de preferência:
 
 1. **Hub USB alimentado** (com fonte própria) — o netbook só transporta dados.
 2. Carregador ligado direto no celular + cabo de dados para o netbook.

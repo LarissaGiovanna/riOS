@@ -68,7 +68,7 @@ economizar bateria. O DeX continua rodando.
 | **Desbloqueie o celular** | Aparelho autorizado, tela bloqueada | Desbloqueie o celular |
 | **Atualize o Android para a versão 15 ou superior** | O DeX em display virtual exige Android 15+ | Atualize o celular ou use outro aparelho |
 | **adb não encontrado — instale o pacote android-tools/adb** | O daemon não achou o `adb` no `PATH` | Instale o pacote (`xbps-install -S android-tools` no Void; `apt install adb` no Debian) |
-| **scrcpy não encontrado — instale o pacote scrcpy** | O daemon não achou o `scrcpy` no `PATH` | Instale o scrcpy 3.0 ou superior |
+| **scrcpy não encontrado — instale o pacote scrcpy** | O daemon não achou o `scrcpy` no `PATH` | Instale o scrcpy 5.0 (mínimo 3.0) |
 
 ---
 
@@ -158,7 +158,7 @@ Confira as versões:
 
 ```sh
 adb version
-scrcpy --version      # precisa ser 3.0 ou superior para --new-display
+scrcpy --version      # precisa ser 5.0 (mínimo 3.0 para --new-display)
 ```
 
 ### 7.2 Arquivos

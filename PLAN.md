@@ -11,8 +11,8 @@ o netbook é apenas monitor + teclado + trackpad.
 > **Revisão 4 (27/10/2026):** dados medidos na bancada (ver §4.4) incorporados ao plano:
 > **UEFI/GPT** em vez de BIOS legado/MBR, **Void Linux + runit** como sistema atual,
 > **1,5 GiB** de RAM útil, **sem zram e com 7,8 GB de swap no HDD**, Wi-Fi **Atheros AR9285**
-> (sem firmware proprietário) e bateria com **55% da capacidade**. Parte do §8, §9 e §12 mudou
-> por causa disso.
+> (sem firmware proprietário) e bateria com **~86% de saúde (3.766/4.400 mAh)** e **29% de carga
+> na coleta**. Parte do §8, §9 e §12 mudou por causa disso.
 >
 > **Revisão 3 (24/10/2026):** portas do 1015BX corrigidas — ele **tem HDMI e VGA** (ambas
 > somente saída) e **P2 de áudio**; §3 e §4.1 reescritos para explicar por que isso não muda
@@ -79,7 +79,7 @@ A diferença entre as variantes é **o alvo da gravação**, não o conteúdo da
 |---|---|---|
 | D1 | Conexão por **USB** (adb + scrcpy), não por vídeo | Um único cabo leva imagem, entrada e energia; dispensa placa de captura e dongle Bluetooth |
 | D2 | Imagem em **Debian 13 (trixie) minimal** + **LXQt**; M1 roda no **Void Linux + runit** já instalado | Baixo consumo de RAM/CPU; LXQt é leve em X11. Separar "distro atual" (Void) de "imagem final" (Debian) evita misturar as duas stacks de init |
-| D3 | **scrcpy ≥ 3.0** | Primeira versão com `--new-display` (display virtual), requisito do DeX no One UI 8 |
+| D3 | **scrcpy 5.0** na bancada (mínimo **3.0**, primeira versão com `--new-display`) | A bancada já tem a 5.0, que é a versão fixada em `build/VERSIONS.lock`; o piso 3.0 garante o display virtual, requisito do DeX no One UI 8 |
 | D4 | Display virtual **1024×600 @ 160 DPI** | Casa 1:1 com o painel → nada é reescalonado → menos CPU para rasterizar |
 | D5 | Sessão em **kiosk** (autologin + daemon), sem gerenciador de janelas visível | O usuário só interage com o DeX, nunca com o SO |
 | D6 | Mesma imagem para USB e HD | Uma coisa só para manter; muda apenas o destino da gravação |
@@ -136,7 +136,7 @@ que roda em display virtual.
 | Áudio | P2 (fone/microfone) + alto-falantes internos + microfone | Saída de fone útil se o áudio do scrcpy for ligado |
 | Rede | Ethernet 10/100 + Wi-Fi **Atheros AR9285** (`168c:002b`, driver `ath9k`) | **Não precisa de firmware proprietário** — cai por terra a exigência de `firmware-brcm80211` |
 | Bluetooth | 3.0 em algumas unidades (`btusb` detectado) | **Não necessário** — toda a entrada vai por USB |
-| Bateria | 6 células (4.400 mAh de projeto); **medido: 3.766 mAh (~86% da capacidade)** | Nível de carga varia (29–55% nas coletas). Autonomia curta: T12 precisa de hub alimentado |
+| Bateria | 6 células (4.400 mAh de projeto); **medido: 3.766 mAh (~86% de saúde)** | Carga de 29% na coleta. Autonomia curta: T12 precisa de hub alimentado |
 | Firmware | **UEFI confirmado** (efivarfs montado, ESP em `/boot/efi`), com CSM/legado disponível | Boot por USB com **Esc** no POST; setup com **F2**. O plano de partição é GPT + ESP (§8) |
 | Câmera | 0,3 MP (`13d3:5711`, uvcvideo) | Não usada |
 
@@ -156,28 +156,31 @@ que roda em display virtual.
 | Debian trixie | 13.x | `debootstrap` (componentes `main`, `contrib`, `non-free-firmware`) |
 | Kernel | `linux-image-amd64` (genérico) | Debian — não usar subkernel `686`/`atom` (descontinuado no Debian 12+) |
 | Firmware | `firmware-amd-graphics` (GPU `radeon`) | Debian `non-free-firmware`. **Wi-Fi não precisa**: a unidade de bancada é Atheros AR9285 (`ath9k`) |
-| scrcpy | 3.x (tar oficial) | GitHub Releases, com SHA-256 conferido |
+| scrcpy | 5.0 (flags conferidas no M2-02) (tar oficial) | GitHub Releases, com SHA-256 conferido |
 | adb | pacote `adb` | Debian (já traz as regras udev) |
-| Desktop | LXQt + SDDM | Debian |
+| Desktop | LXQt + SDDM (ou lightdm, conforme DEC-01) | Debian |
 | Driver de vídeo X11 | `xserver-xorg-video-radeon` + Mesa | Debian |
 | GRUB | `grub-efi-amd64` (`x86_64-efi`) | Debian — alvo `i386-pc` apenas se optar por CSM |
 
-### 4.4 Estado medido da máquina (21/10/2026)
+### 4.4 Estado medido da máquina (coleta de 21/10/2026 — data do relógio, não confiável)
 
 Levantado com `scripts/coleta-ambiente.sh`; documento completo em `docs/ambiente-de-testes.md`.
+A data é a do relógio da máquina, que estava sem NTP e atrasado; a coleta deve ser refeita
+depois do `chrony` do M1-01. A bancada é **Void/runit/Xfce/lightdm**; a imagem é
+**Debian/systemd/LXQt/SDDM** (ou lightdm, conforme DEC-01).
 
 | Item | Valor medido | Consequência para o plano |
 |---|---|---|
 | Distribuição atual | **Void Linux**, kernel **6.18.56_1**, x86_64 | M1 roda em Void/**runit** (§9.1); a imagem final continua Debian/systemd |
 | Init | **runit** (`/etc/sv`, `sv`) | Nada de `systemctl`/`journald` no M1; usar `sv` + `svlogd` |
 | Gerenciador de pacotes | `xbps` (o `dpkg` reporta 0) | M1 instala `adb`/`scrcpy` por `xbps-install`, não `apt` |
-| Memória | 1,5 GiB total, 1,1 GiB disponível, 470 MiB em uso | Orçamento de trabalho: ≤ 500 MB em repouso |
+| Memória | 1,5 GiB total, 1,1 GiB disponível, 470 MiB em uso | Orçamento de projeto: ≤ 500 MB em repouso; aprovação do T11: < 450 MB (a folga cobre variação entre medições) |
 | Swap | 7,8 GB em `/dev/sda3` (HDD), **sem zram** | Estado atual é o oposto do recomendado — comparar com e sem zram em M6 |
 | Vídeo | `radeon` ativo; sem sessão X durante a coleta | Recoletar `xrandr` com o LXQt/X rodando |
 | Ferramentas | `adb` 36.0.1, `scrcpy` **5.0**, `ffmpeg` 6.1.6, Python 3.14.8 | Versões medidas; fixar no `build/VERSIONS.lock` |
-| Sessão gráfica | **lightdm** (não SDDM), tela `LVDS` 1024×600; HDMI-0 e VGA-0 desconectados | O plano pode usar lightdm, mais leve que SDDM |
-| Relógio | **sem NTP instalado; 6 dias e 7 h atrasado** em 27/10 | Instalar `chrony` antes de qualquer medição com data |
-| Bateria | 3.766 mAh de 4.400 mAh de projeto (**~86%**); carga 29–55% | T12 precisa de hub alimentado |
+| Sessão gráfica | **Xfce 4.20** via **lightdm** (não SDDM), tela `LVDS` 1024×600; HDMI-0 e VGA-0 desconectados | A bancada é Xfce/lightdm; a imagem pode usar LXQt + lightdm, mais leve que SDDM (DEC-01) |
+| Relógio | **sem NTP instalado; 6 dias e 7 h atrasado** em 27/10 | Instalar `chrony` antes de qualquer medição com data; a data de 21/10 é a do relógio e não é confiável |
+| Bateria | 3.766 mAh de 4.400 mAh de projeto (**~86% de saúde**); carga de 29% na coleta | T12 precisa de hub alimentado |
 
 ---
 
@@ -504,9 +507,13 @@ hardware melhor.
 | T9 | Rede | dados trafegam pelo USB; internet via tethering opcional |
 | T10 | Instalação HD | backup gerado; imagem gravada; GRUB instalado; boot pelo HD |
 | T11 | Performance | CPU < 60% e RAM < 450 MB em repouso por 30 min; **1,5 GiB no total**; sem travamento |
-| T12 | Energia | celular carregando via hub alimentado; temperatura estável; **bateria do netbook já em 55%** |
+| T12 | Energia | celular carregando via hub alimentado; temperatura estável; **bateria do netbook com ~86% de saúde e 29% de carga inicial** |
 | T13 | Recuperação | `Ctrl+Alt+F2` → TTY; `rios restart`; saída de emergência (systemd ou runit) |
 | T14 | Autonomia | sem celular: não trava, não reinicia, tela de espera persistente |
+
+> **RAM — aprovação × orçamento:** o T11 **aprova** com **< 450 MB** em repouso; **≤ 500 MB**
+> é o orçamento de projeto. A folga de 50 MB absorve variação entre medições e a diferença de
+> stack (bancada Xfce × imagem LXQt), sem transformar todo pico em reprovação.
 
 ---
 
@@ -517,13 +524,13 @@ hardware melhor.
 | DeX novo não aparece em display virtual em algum One UI 8.x | Média | Médio | Cadeia de fallback; testar no aparelho real cedo (M2) |
 | Porta USB (500 mA) drena a bateria do netbook | Alta | Médio | Hub alimentado; `--turn-screen-off`; documentar no README |
 | Radeon HD 6290 engasga na decodificação por CPU | Média | Médio | 1024×600/15 fps; se falhar, 800×480 |
-| 2 GB de RAM (**1,5 GiB úteis medidos**) estoura com LXQt + scrcpy | **Alta** | Alto | zram 1 GB; sem compositor; áudio off; trocar SDDM por algo mais leve; budget ≤ 500 MB |
+| 2 GB de RAM (**1,5 GiB úteis medidos**) estoura com LXQt + scrcpy | **Alta** | Alto | zram 1 GB; sem compositor; áudio off; trocar SDDM por algo mais leve; orçamento ≤ 500 MB (reprovação do T11 em ≥ 450 MB) |
 | Trackpad com movimento "absoluto" estranho | Média | Baixo | `--mouse=sdk` padrão; testar `uhid` |
 | Layout de teclado divergente (ABNT2 × US intl) | Alta | Baixo | Configurar teclado físico no celular; alternativa `--keyboard=sdk` |
 | Tabela de partição / ESP atual atrapalha o boot | Média | Alto | Backup da ESP e da tabela antes; imagem em GPT com `BOOTX64.EFI` (`--removable`) |
 | Firmware UEFI não lista o pendrive | Média | Alto | Entrada `EFI/BOOT/BOOTX64.EFI`; *USB Boot* no F2; CSM como plano B |
 | HDD 5400 rpm lento | Alta | Médio | zram em vez de swap; desligar automount SD; `fstrim` off |
-| Bateria do netbook com desgaste (~86%) e carga baixa | **Alta** | Médio | Hub alimentado obrigatório; carregar antes do T12; considerar bateria nova |
+| Bateria do netbook com desgaste (~86% de saúde) e carga de 29% na coleta | **Alta** | Médio | Hub alimentado obrigatório; carregar antes do T12; considerar bateria nova |
 | Swap atual de 7,8 GB no HDD (sem zram) | Alta | Médio | Ativar zram (`zramen` no Void) antes de medir; registrar a diferença nos dados |
 | Build oficial do scrcpy incompatível com glibc da trixie | Baixa | Médio | Pacote `scrcpy` do Debian ou compilar do fonte |
 | Superaquecimento / throttle do C-60 (9 W, cooler de netbook) | Média | Baixo | Limpar o cooler; não bloquear as saídas de ar; monitorar temperatura em T12 |
@@ -552,7 +559,7 @@ depois que a parte difícil está provada.
 ## 14. Estrutura do repositório
 
 ```
-dex-station/ (riOS)
+riOS/ (diretório local: dex-station/)
 ├── PLAN.md                     # este documento
 ├── README.md                   # visão geral
 ├── build/
@@ -560,28 +567,39 @@ dex-station/ (riOS)
 │   ├── post-install.sh         # configuração dentro do chroot
 │   ├── VERSIONS.lock           # versões fixadas + SHA-256
 │   └── overlay/                # arquivos injetados na raiz da imagem
+├── etc/
+│   └── rios/config             # configuração do daemon
 ├── runtime/
 │   ├── rios-session            # daemon do kiosk
 │   ├── rios-launch             # CLI de controle
-│   └── dex-wait-screen/        # tela de espera
+│   └── rios-wait-screen/       # tela de espera
 ├── scripts/
 │   ├── make-live-usb.sh
 │   ├── install-on-disk.sh
 │   ├── backup-disk.sh
 │   ├── restore-disk.sh
-│   ├── flash-netbook.sh
-│   └── coleta-ambiente.sh      # inventário da máquina (--mascarar para publicar)
+│   ├── vm-virtualbox.sh        # simulação em VM
+│   ├── coleta-ambiente.sh      # inventário da máquina (--mascarar para publicar)
+│   └── gerar-pdf.py            # geração dos PDFs da documentação
 ├── docs/
 │   ├── OPERATOR.md
 │   ├── BUILD.md
 │   ├── TROUBLESHOOTING.md
 │   ├── ambiente-de-testes.md   # S1-P1-01 (gerado)
+│   ├── revisao-p2.md
+│   ├── pendencias-p2.md
+│   ├── contexto.md
+│   ├── virtualbox-simulacao.md
 │   └── fotos/                  # evidências da bancada
 └── tests/
+    ├── run-tests.sh
     ├── test-config.sh
     ├── test-state-machine.sh
     ├── test-fallback.sh
-    └── smoke-live-usb.sh
+    ├── test-device-states.sh
+    ├── test-cli.sh
+    ├── PENDING-HARDWARE.md
+    └── mock/                   # adb e scrcpy simulados
 ```
 
 ---
