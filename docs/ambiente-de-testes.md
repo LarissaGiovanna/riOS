@@ -3,8 +3,9 @@
 > Gerado automaticamente por `scripts/coleta-ambiente.sh` em 2026-10-21T12:06:25-03:00
 > Host: `asus`
 >
-> **Nota sobre a data:** é a data do relógio da máquina no momento da coleta. O netbook está
-> sem NTP e com o relógio atrasado (ver §12); o valor foi mantido como foi gerado.
+> **Nota sobre a data:** é a **data do relógio, não confiável**. O netbook está sem NTP e com o
+> relógio atrasado (ver §12); o valor foi mantido apenas como foi gerado. Refazer a coleta depois
+> da instalação do `chrony` do M1-01.
 
 ## Resumo
 
@@ -27,6 +28,9 @@
 $ date -Iseconds
 2026-10-21T12:06:25-03:00
 ```
+
+> **Data do relógio, não confiável:** o netbook estava sem NTP e ~6 dias atrasado. Recoletar
+> depois do `chrony` do M1-01.
 
 **Modelo / fabricante (DMI)**
 

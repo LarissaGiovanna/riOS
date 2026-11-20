@@ -109,6 +109,10 @@ valor_debian() { # valor_debian ARQUIVO CHAVE
     echo
     echo "> Gerado automaticamente por \`scripts/coleta-ambiente.sh\` em $DATA_ISO"
     echo "> Host: \`$HOST\`"
+    echo ">"
+    echo "> **Nota sobre a data:** é a **data do relógio, não confiável**. Se a máquina estiver"
+    echo "> sem NTP, o valor pode estar atrasado; refazer a coleta depois de sincronizar o"
+    echo "> relógio (chrony do M1-01)."
     echo
     echo "## Resumo"
     echo
@@ -143,7 +147,8 @@ run "Modelo (DMI, sem root)" "cat /sys/devices/virtual/dmi/id/product_name" >> "
 run_root "Modelo (dmidecode)" "dmidecode -s system-product-name" >> "$OUT"
 run "Número de série" "echo 'não coletado de propósito (dado identificável, sem valor para o artigo)'" >> "$OUT"
 run_root "Slots e módulos de memória" "dmidecode -t memory | grep -E 'Size|Speed|Type:|Locator|Maximum Capacity' | grep -v 'No Module'" >> "$OUT"
-run "Resumo de hardware (lshw, se instalado)" "lshw -short 2>/dev/null || echo 'lshw não instalado (opcional)'" >> "$OUT"run "Tempo ligado" "uptime -p 2>/dev/null || uptime" >> "$OUT"
+run "Resumo de hardware (lshw, se instalado)" "lshw -short 2>/dev/null || echo 'lshw não instalado (opcional)'" >> "$OUT"
+run "Tempo ligado" "uptime -p 2>/dev/null || uptime" >> "$OUT"
 
 # ---------------------------------------------------------------- 2. CPU e RAM
 

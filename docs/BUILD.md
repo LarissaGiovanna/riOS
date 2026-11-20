@@ -62,7 +62,8 @@ cd /caminho/para/dex-station
 ```
 
 ### 3.2 Verificar Versões Fixadas
-O arquivo [`build/VERSIONS.lock`](../build/VERSIONS.lock) contém as versões de kernel, adb e scrcpy:
+O arquivo [`build/VERSIONS.lock`](../build/VERSIONS.lock) contém as versões de kernel, adb e scrcpy.
+O `scrcpy` está fixado em **5.0** (mínimo 3.0, primeira versão com `--new-display`):
 
 ```bash
 cat build/VERSIONS.lock
@@ -87,7 +88,7 @@ sudo ./build/build-rios.sh
 5. **Debootstrap**: baixa e descompacta a base Debian `trixie` (repositórios `main`, `contrib`, `non-free-firmware`).
 6. **Configuração via chroot**: executa [`build/post-install.sh`](../build/post-install.sh):
    - Instala kernel `linux-image-amd64`, LXQt, SDDM com autologin para `dex`.
-   - Baixa e instala o `scrcpy` e o Android Debug Bridge (`adb`).
+   - Baixa e instala o `scrcpy` **5.0** e o Android Debug Bridge (`adb`).
    - Habilita `systemd-zram-generator` (1 GB de swap comprimido em RAM).
    - Desativa serviços dispensáveis (`cups`, `avahi-daemon`, `modemmanager`, etc.).
    - Aplica os arquivos do diretório [`build/overlay/`](../build/overlay/).
