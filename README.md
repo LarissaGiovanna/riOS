@@ -63,7 +63,7 @@ O inventário completo (com as saídas de `lscpu`, `free`, `lsusb`, `lsblk`, `ls
 
 Consequência direta: o **M1 roda em Void/runit/Xfce/lightdm**, então os comandos da fase de
 bancada são `xbps-install` + `sv`, enquanto a imagem final (M3 em diante) usa
-**Debian/systemd/LXQt/SDDM** (ou lightdm, conforme DEC-01). O plano mantém os dois caminhos
+**Debian/systemd/LXQt/SDDM** (DEC-01). O plano mantém os dois caminhos
 separados (ver [`PLAN.md`](PLAN.md) §9.1.1) e toda comparação de desempenho precisa declarar
 qual stack foi medida.
 
@@ -147,7 +147,8 @@ na coleta**, o que encurta ainda mais a autonomia. Soluções, em ordem de prefe
 
 - Sem aceleração de vídeo no scrcpy: a decodificação é feita pela CPU (a APU tem decoder
   UVD3, mas o scrcpy não o utiliza). Por isso o teto de 15 fps.
-- Sem áudio por padrão é a escolha mais segura para 1,5 GiB de RAM (decisão em aberto no plano).
+- Sem áudio por padrão: decisão fechada no DEC-01 para preservar RAM no 1,5 GiB (o P2 de fone
+  continua disponível se o áudio for reativado depois do T11).
 - O pendrive do modo Live **não guarda nada** entre boots — é descartável por projeto.
 - O estado atual usa **swap em disco e nenhum zram**, o oposto do que a imagem vai entregar:
   comparações de desempenho entre bancada e imagem precisam registrar essa diferença.

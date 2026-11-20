@@ -8,6 +8,11 @@ HDD 5400 rpm, **UEFI confirmado em bancada** (GPT + ESP, com CSM legado disponí
 **Objetivo:** transformar o netbook numa estação DeX dedicada — o celular faz o processamento,
 o netbook é apenas monitor + teclado + trackpad.
 
+> **Revisão 5 (19/11/2026):** decisões do **DEC-01** fechadas (§16): Live USB sem persistência
+> (trabalho futuro), áudio desligado, sistema em pt_BR, imagem mutável por enquanto, sem uso
+> secundário, SDDM, boot só por UEFI e **Debian como base do riOS** (o Void é apenas o sistema
+> atualmente instalado na bancada).
+>
 > **Revisão 4 (27/10/2026):** dados medidos na bancada (ver §4.4) incorporados ao plano:
 > **UEFI/GPT** em vez de BIOS legado/MBR, **Void Linux + runit** como sistema atual,
 > **1,5 GiB** de RAM útil, **sem zram e com 7,8 GB de swap no HDD**, Wi-Fi **Atheros AR9285**
@@ -78,7 +83,7 @@ A diferença entre as variantes é **o alvo da gravação**, não o conteúdo da
 | # | Decisão | Justificativa |
 |---|---|---|
 | D1 | Conexão por **USB** (adb + scrcpy), não por vídeo | Um único cabo leva imagem, entrada e energia; dispensa placa de captura e dongle Bluetooth |
-| D2 | Imagem em **Debian 13 (trixie) minimal** + **LXQt**; M1 roda no **Void Linux + runit** já instalado | Baixo consumo de RAM/CPU; LXQt é leve em X11. Separar "distro atual" (Void) de "imagem final" (Debian) evita misturar as duas stacks de init |
+| D2 | Imagem em **Debian 13 (trixie) minimal** + **LXQt**; M1 roda no **Void Linux + runit** já instalado | **Debian é a base do riOS**; o Void é só o sistema atualmente instalado na bancada e não faz parte da entrega. Baixo consumo de RAM/CPU; LXQt é leve em X11; separar as duas stacks evita misturar os ambientes de teste e de produção |
 | D3 | **scrcpy 5.0** na bancada (mínimo **3.0**, primeira versão com `--new-display`) | A bancada já tem a 5.0, que é a versão fixada em `build/VERSIONS.lock`; o piso 3.0 garante o display virtual, requisito do DeX no One UI 8 |
 | D4 | Display virtual **1024×600 @ 160 DPI** | Casa 1:1 com o painel → nada é reescalonado → menos CPU para rasterizar |
 | D5 | Sessão em **kiosk** (autologin + daemon), sem gerenciador de janelas visível | O usuário só interage com o DeX, nunca com o SO |
@@ -158,7 +163,7 @@ que roda em display virtual.
 | Firmware | `firmware-amd-graphics` (GPU `radeon`) | Debian `non-free-firmware`. **Wi-Fi não precisa**: a unidade de bancada é Atheros AR9285 (`ath9k`) |
 | scrcpy | 5.0 (flags conferidas no M2-02) (tar oficial) | GitHub Releases, com SHA-256 conferido |
 | adb | pacote `adb` | Debian (já traz as regras udev) |
-| Desktop | LXQt + SDDM (ou lightdm, conforme DEC-01) | Debian |
+| Desktop | LXQt + SDDM | Debian (DEC-01) |
 | Driver de vídeo X11 | `xserver-xorg-video-radeon` + Mesa | Debian |
 | GRUB | `grub-efi-amd64` (`x86_64-efi`) | Debian — alvo `i386-pc` apenas se optar por CSM |
 
@@ -167,7 +172,7 @@ que roda em display virtual.
 Levantado com `scripts/coleta-ambiente.sh`; documento completo em `docs/ambiente-de-testes.md`.
 A data é a do relógio da máquina, que estava sem NTP e atrasado; a coleta deve ser refeita
 depois do `chrony` do M1-01. A bancada é **Void/runit/Xfce/lightdm**; a imagem é
-**Debian/systemd/LXQt/SDDM** (ou lightdm, conforme DEC-01).
+**Debian/systemd/LXQt/SDDM** (DEC-01).
 
 | Item | Valor medido | Consequência para o plano |
 |---|---|---|
@@ -178,7 +183,7 @@ depois do `chrony` do M1-01. A bancada é **Void/runit/Xfce/lightdm**; a imagem 
 | Swap | 7,8 GB em `/dev/sda3` (HDD), **sem zram** | Estado atual é o oposto do recomendado — comparar com e sem zram em M6 |
 | Vídeo | `radeon` ativo; sem sessão X durante a coleta | Recoletar `xrandr` com o LXQt/X rodando |
 | Ferramentas | `adb` 36.0.1, `scrcpy` **5.0**, `ffmpeg` 6.1.6, Python 3.14.8 | Versões medidas; fixar no `build/VERSIONS.lock` |
-| Sessão gráfica | **Xfce 4.20** via **lightdm** (não SDDM), tela `LVDS` 1024×600; HDMI-0 e VGA-0 desconectados | A bancada é Xfce/lightdm; a imagem pode usar LXQt + lightdm, mais leve que SDDM (DEC-01) |
+| Sessão gráfica | **Xfce 4.20** via **lightdm** (não SDDM), tela `LVDS` 1024×600; HDMI-0 e VGA-0 desconectados | A bancada é Xfce/lightdm; a imagem usa LXQt + SDDM (DEC-01; se o T11 estourar 450 MB, reavaliar lightdm) |
 | Relógio | **sem NTP instalado; 6 dias e 7 h atrasado** em 27/10 | Instalar `chrony` antes de qualquer medição com data; a data de 21/10 é a do relógio e não é confiável |
 | Bateria | 3.766 mAh de 4.400 mAh de projeto (**~86% de saúde**); carga de 29% na coleta | T12 precisa de hub alimentado |
 
@@ -269,8 +274,8 @@ IDLE ──(celular autorizado)──► PREPARING ──(ok)──► RUNNING
   justamente o que o `grub-install --removable` grava (§8, item 6). Se não aparecer:
   **F2** → *Boot* → *USB Boot* habilitado e, se houver, *CSM/Legacy* ligado como plano B.
 - O HD do netbook permanece **intocado** — este é o critério de aceite principal (T8).
-- Persistência: **não há**, de propósito. Cada boot começa do zero. Se isso for necessário
-  no futuro, o caminho é squashfs + overlayfs (fora do escopo da v1).
+- Persistência: **não há**, de propósito (DEC-01: trabalho futuro). Cada boot começa do zero.
+  Se isso for necessário, o caminho é squashfs + overlayfs (fora do escopo da v1).
 
 **Script**: `scripts/make-live-usb.sh <dispositivo> <img>` — recusa dispositivo montado,
 exige confirmação explícita, confere o alvo com `lsblk`, grava com `dd`, roda `sync` e
@@ -625,20 +630,20 @@ riOS/ (diretório local: dex-station/)
 
 ---
 
-## 16. Decisões em aberto
+## 16. Decisões fechadas (DEC-01 — 19/11/2026)
 
-1. **Persistência no pendrive** — v1 sem persistência. Persistência real exigiria
-   squashfs + overlayfs. Confirmar se é requisito.
-2. **Áudio** — padrão desligado na v1 (1,5 GiB de RAM útil). O netbook tem P2 de fone, então
-   há como ouvir sem depender dos alto-falantes fracos. Reavaliar depois do T11.
-3. **Idiomas** — sistema em pt_BR (padrão) ou en_US com mensagens em português?
-4. **Nível de "dedicação"** — remover o apt (imagem imutável) ou manter para manutenção?
-   Recomendo manter, com apt disponível no TTY de manutenção.
-5. **Segundo uso** — apenas DeX, ou também um navegador local no netbook? Isso muda a
-   decisão de manter o LXQt completo.
-6. **Gerenciador de sessão** — SDDM (padrão, ~60–80 MB) ou algo mais leve
-   (`lightdm`/`startx`) para preservar RAM no 1,5 GiB?
-7. **UEFI vs CSM** — a máquina dá boot em UEFI (GPT + ESP). Manter só esse caminho, ou
-   também gerar uma variante MBR/`i386-pc` para outras unidades de 1015BX?
-8. **Trocar o Void por Debian antes do M5, ou manter os dois?** A instalação no HD substitui
-   o sistema atual; o backup da ESP e do `/home` precisa estar pronto antes.
+1. **Persistência no pendrive** — **trabalho futuro**. A v1 do Live USB não persiste nada;
+   persistência real exigiria squashfs + overlayfs e aumentaria o escopo.
+2. **Áudio** — **desligado** por padrão (`AUDIO=off`), para preservar RAM no 1,5 GiB. Reavaliar
+   apenas se o T11 mostrar folga.
+3. **Idioma** — sistema em **pt_BR** (`LANG=pt_BR.UTF-8`), com mensagens em português.
+4. **Imagem imutável** — **não por enquanto**. Manter o `apt` disponível no TTY de manutenção.
+5. **Uso secundário (navegador local)** — **não** na v1; o netbook é só terminal do DeX e o
+   LXQt fica enxuto.
+6. **Gerenciador de sessão** — **SDDM** por enquanto, porque `post-install.sh` e o overlay já
+   estão escritos para ele. Se o T11 estourar 450 MB, trocar para lightdm e medir de novo.
+7. **UEFI × CSM** — **só UEFI** na v1 (GPT + ESP + `grub-efi-amd64`); CSM permanece apenas como
+   plano B documentado, não como variante entregue.
+8. **Void × Debian** — **Debian é a base do riOS**. O Void é apenas o sistema atualmente instalado
+   na bancada para o M1; não faz parte da entrega nem influencia a imagem final. A instalação no
+   HD substitui o Void depois do backup do M5-01.
