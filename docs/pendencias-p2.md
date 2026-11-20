@@ -2,7 +2,8 @@
 
 Resumo curto das lacunas depois da revisão do daemon/CLI (ver
 [`revisao-p2.md`](revisao-p2.md)). A suíte passa com adb/scrcpy simulados
-(141 casos), mas isso **não** equivale a validar no aparelho real.
+(150 casos), inclusive na VM Debian 13, mas isso **não** equivale a validar no
+aparelho real.
 
 ---
 
@@ -11,8 +12,13 @@ Resumo curto das lacunas depois da revisão do daemon/CLI (ver
 - `runtime/rios-session` e `runtime/rios-launch` revisados e corrigidos.
 - Fallbacks A/B/C exercitados (A→B, A e B→C, e falha total).
 - Máquina de estados, hotplug simulado, config e CLI cobertos por teste.
+- Validação repetida no alvo **Debian 13 (VM)**: suíte inteira, CLI em modo
+  direto e `scrcpy` 5.0 real (flags aceitas; sem Galaxy não há imagem).
+- `--max-cycles` encerra sem aparelho; `status` mostra resolução/init da
+  sessão; parser da CLI ignora ruído do `adb`.
 - `docs/OPERATOR.md`, `docs/TROUBLESHOOTING.md` e `docs/revisao-p2.md`.
-- 7 commits locais; nada enviado ao `origin`.
+- Commits da revisão P2 no histórico local; nada enviado ao `origin` nesta
+  rodada.
 
 ---
 
@@ -23,7 +29,7 @@ Resumo curto das lacunas depois da revisão do daemon/CLI (ver
 | T3 — detecção, autorização e tela bloqueada | `dumpsys window` real varia por One UI | Larissa + Galaxy |
 | T4 — DeX em display virtual | Confirmar `--new-display` e barra de tarefas no S24 | Larissa + Galaxy |
 | T5 — teclado ABNT2 e trackpad | Só o hardware real prova | Larissa + Galaxy |
-| T6/T7 — hotplug e fallback reais | Unplug físico e falha real de método | Larissa + Galaxy |
+| T6/T7 — hotplug e fallback reais | Unplug físico e falha real de método | Larissa + Galaxy (T7 automatizado rodou na VM Debian) |
 | T11/T12 — latência, FPS, CPU, RAM, energia | Exige medição no netbook | bancada |
 | T14 — sessão longa / estabilidade | Exige tempo de uso real | bancada |
 
@@ -42,12 +48,15 @@ Roteiro detalhado em [`revisao-p2.md`](revisao-p2.md) §5 e matriz em
    As mensagens existem no daemon, mas a instalação do visualizador/atalho na
    imagem ainda não foi feita.
 3. **Serviço e logs no Debian.**
-   Falta a unidade systemd e a rotação via `svlogd` (o M1 usa runit).
+   Falta a unidade systemd e a rotação via `svlogd` (o M1 usa runit). A VM
+   desta rodada não tinha `rios-session.service`; por isso a CLI foi validada
+   em modo direto.
 4. **Presets `PROFILE`.**
    O `PLAN.md` prevê perfis de resolução/FPS; o daemon ainda não os aplica.
 5. **Checagem de versão do scrcpy.**
-   O fallback A depende de `--new-display`; falta validar a versão mínima antes
-   de tentar o método e avisar cedo.
+   O fallback A depende de `--new-display`; o `scrcpy` 5.0 da VM aceita as
+   flags, mas falta validar a versão mínima antes de tentar o método e avisar
+   cedo (o Mint original não exercitava o binário do alvo).
 6. **Detecção de imagem preta.**
    O watchdog vê processo vivo, não pixels (limitação L1). Se a bancada mostrar
    travamento com processo de pé, será preciso capturar a janela (`xdotool`).
@@ -71,3 +80,6 @@ repositório não tem `.tex` nem `.bib`; o texto do artigo está fora dele.
 3. Fechar o empacotamento P3: runtime + config na imagem, systemd, `svlogd`.
 4. Escrever a Seção 3 do artigo com os resultados de T3–T7.
 5. Reavaliar presets `PROFILE` e completar os testes faltantes.
+
+> A repetição no Debian 13 (VM) já foi feita. O que ainda depende da VM é o
+> serviço systemd e a tela de espera na imagem, ambos do P3.
