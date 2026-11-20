@@ -14,7 +14,7 @@ sem o Samsung e sem o Eee PC 1015BX. Os demais exigem a bancada real.
 | T4 | DeX virtual: barra de tarefas + janela redimensionável no display virtual | SÓ HARDWARE | ⬜ Pendente |
 | T5 | Entrada: clique, arrasto, rolagem e digitação ABNT2 (acentos, ç) | SÓ HARDWARE | ⬜ Pendente |
 | T6 | Hotplug: unplug → limpeza sem display órfão; replug → sessão nova | SÓ HARDWARE | 🟡 Mock cobre o ciclo; falta o Galaxy |
-| T7 | Fallback: método A forçado a falhar → B → C, cada um exibindo imagem | PODE RODAR EM VM | 🟡 Automatizado em `tests/test-fallback.sh` (A→B→C, B e C assumindo) |
+| T7 | Fallback: método A forçado a falhar → B → C, cada um exibindo imagem | PODE RODAR EM VM | 🟡 Automatizado em `tests/test-fallback.sh`; executado no Debian 13 (VM); falta a imagem no Galaxy |
 | T8 | Live USB: boot pelo pendrive; **HD intocado** (tabela e checksums inalterados) | PODE RODAR EM VM | ⬜ Pendente |
 | T9 | Rede: dados trafegam pelo USB; internet via tethering opcional | SÓ HARDWARE | ⬜ Pendente |
 | T10 | Instalação HD: backup gerado; imagem gravada; GRUB instalado; boot pelo HD | PODE RODAR EM VM | ⬜ Pendente (depende de `build/` e `scripts/`) |
@@ -30,15 +30,16 @@ Os testes abaixo rodam sem celular, sem root e sem o netbook (usam os mocks em
 
 ```sh
 tests/run-tests.sh          # roda a suíte inteira e resume os resultados
-tests/test-config.sh        # parsing, defaults, valores inválidos, zeros à esquerda
+tests/test-config.sh        # parsing, defaults, zeros à esquerda e --max-cycles
 tests/test-state-machine.sh # IDLE → PREPARING → RUNNING → cleanup → IDLE
 tests/test-fallback.sh      # A→B→C com falha total; B e C assumindo a sessão
 tests/test-device-states.sh # sem aparelho, não autorizado, offline, bloqueado, sem adb
-tests/test-cli.sh           # start/status/logs/restart/stop/shell da rios-launch
+tests/test-cli.sh           # start/status/logs/restart/stop/shell, resolução e ruído do adb
 ```
 
-A suíte completa tem **141 casos** e roda sem root, celular ou rede. O detalhe
-da revisão e o roteiro de bancada estão em
+A suíte completa tem **150 casos** e roda sem root, celular ou rede. Ela foi
+executada no host original (Mint) e repetida na **VM Debian 13**; o detalhe da
+revisão e o roteiro de bancada estão em
 [`docs/revisao-p2.md`](../docs/revisao-p2.md).
 
 Os testes que dependem do celular real (T3–T6, T9, T11, T12, T14) devem ser
