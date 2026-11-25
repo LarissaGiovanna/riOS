@@ -77,7 +77,7 @@ qual stack foi medida.
 | M3 | Build da imagem (`rios.img`) | ⬜ |
 | M4 | Live USB | ⬜ |
 | M5 | Instalação no HD | ⬜ |
-| M6 | Calibração de performance + documentação | ⬜ |
+| M6 | Calibração de performance + documentação | 🔄 Protocolo e script de coleta prontos (M6-01); faltam as medições |
 | M7 | Estabilização e release v1.0 | ⬜ |
 
 ## Por onde começar
@@ -92,6 +92,9 @@ qual stack foi medida.
 
 - [`docs/OPERATOR.md`](docs/OPERATOR.md) — uso diário, atalhos, configuração e
   instalação na bancada (Void/runit).
+- [`docs/protocolo-medicoes.md`](docs/protocolo-medicoes.md) — protocolo de medição de
+  desempenho e energia (T11/T12): condições C0/C1, métricas, fases e o que invalida uma
+  rodada. A coleta é feita por `scripts/coleta-desempenho.sh`, com saída em `docs/medicoes/`.
 - [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — sintoma → causa → solução.
 - [`docs/revisao-p2.md`](docs/revisao-p2.md) — revisão do daemon/CLI, achados,
   correções e roteiro de validação no aparelho real.
@@ -107,10 +110,11 @@ A suíte usa `adb` e `scrcpy` simulados e roda em qualquer Linux com Bash:
 tests/run-tests.sh
 ```
 
-Cobre config, máquina de estados, fallbacks A/B/C, estados de conexão e a CLI.
-A suíte tem **150 casos** e foi executada também na **VM Debian 13**
-(systemd/LXQt), com `scrcpy` 5.0 real; os testes que dependem do Galaxy estão em
-[`tests/PENDING-HARDWARE.md`](tests/PENDING-HARDWARE.md).
+Cobre config, máquina de estados, fallbacks A/B/C, estados de conexão, a CLI e a
+coleta de medições (`tests/test-coleta-desempenho.sh`).
+Os testes do daemon/CLI são **150 casos** e foram executados também na
+**VM Debian 13** (systemd/LXQt), com `scrcpy` 5.0 real; o que depende do Galaxy
+está em [`tests/PENDING-HARDWARE.md`](tests/PENDING-HARDWARE.md).
 
 ## Variantes de entrega
 

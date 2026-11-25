@@ -7,6 +7,11 @@
 > relógio atrasado (ver §12); o valor foi mantido apenas como foi gerado. Refazer a coleta depois
 > da instalação do `chrony` do M1-01.
 
+> **Desempenho:** este documento é o *retrato* do ambiente. Para medir consumo de CPU, RAM,
+> swap, temperatura e energia, o protocolo é
+> [`protocolo-medicoes.md`](protocolo-medicoes.md) e o script é
+> `scripts/coleta-desempenho.sh` (saída em `docs/medicoes/`).
+
 ## Resumo
 
 | Campo | Valor |
