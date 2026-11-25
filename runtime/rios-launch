@@ -129,7 +129,7 @@ adb_device_info() {
   local out serial="" state="" field1 field2
   out="$(timeout "$ADB_TIMEOUT" adb devices 2>/dev/null || true)"
   while IFS=$'\t ' read -r field1 field2 _rest; do
-    [[ -z "$field1" || "$field1" == "List" ]] && continue
+    [[ -z "$field1" || "$field1" == "List" || "$field1" == "*" || "$field1" == "adb" ]] && continue
     if [[ -n "$field2" ]]; then
       serial="$field1"
       state="$field2"
@@ -144,19 +144,22 @@ adb_device_info() {
   esac
 }
 
-# Descobre a resolução da tela via xrandr (ou usa a do status do daemon).
+# Descobre a resolução da sessão. O daemon grava a resolução que realmente
+# usou no status; o xrandr só é consultado quando não há status (daemon nunca
+# rodou). Antes, um host com tela 1920x1080 ou uma VM 1280x800 mostrava a
+# resolução do monitor do host, não a do Debian/DeX (1024x600).
 current_resolution() {
-  local res="" fallback
-  if command -v xrandr >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
-    res="$(xrandr --current 2>/dev/null | awk '/ connected/ {
-      for (i = 1; i <= NF; i++) {
-        if ($i ~ /^[0-9]+x[0-9]+/) { sub(/\+.*/, "", $i); print $i; exit }
-      }
-    }' || true)"
-  fi
+  local res=""
+  res="$(status_get RESOLUTION || true)"
   if [[ ! "$res" =~ ^[0-9]+x[0-9]+$ ]]; then
-    fallback="$(status_get RESOLUTION || true)"
-    [[ -n "$fallback" ]] && res="$fallback"
+    res=""
+    if command -v xrandr >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+      res="$(xrandr --current 2>/dev/null | awk '/ connected/ {
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ /^[0-9]+x[0-9]+/) { sub(/\+.*/, "", $i); print $i; exit }
+        }
+      }' || true)"
+    fi
   fi
   [[ -n "$res" ]] || res="—"
   printf '%s' "$res"
@@ -178,11 +181,17 @@ process_usage() {
 
 # Subcomando status.
 cmd_status() {
-  local init state pid scrcpy_pid cpu_line
+  local init state pid scrcpy_pid cpu_line status_init
   init="$(detect_init)"
   state="$(status_get STATE || true)"
   pid="$(daemon_pid || true)"
   scrcpy_pid="$(status_get SCRCPY_PID || true)"
+  # O init do status é o que o daemon realmente usou. Isso evita dizer
+  # "systemd" quando a CLI caiu para o modo direto porque a unit não existe.
+  status_init="$(status_get INIT || true)"
+  if [[ -n "$pid" && -n "$status_init" ]]; then
+    init="$status_init"
+  fi
 
   printf 'riOS — status da sessão\n'
   printf '  Init...........: %s\n' "$init"

@@ -757,6 +757,15 @@ wait_for_device() {
     if (( ONCE == 1 )); then
       return 1
     fi
+    # --max-cycles também precisa limitar a espera. Sem isto, o contador só
+    # subia depois de uma sessão e o daemon ficava preso quando o celular
+    # nunca aparecia (caso comum ao testar a imagem sem hardware).
+    if (( MAX_CYCLES > 0 )); then
+      CYCLES=$(( CYCLES + 1 ))
+      if (( CYCLES >= MAX_CYCLES )); then
+        return 1
+      fi
+    fi
     sleep "$POLL_INTERVAL"
   done
 }
@@ -799,7 +808,8 @@ Opções:
       --log-dir DIR      diretório de logs (padrão: /var/log/rios)
       --state-dir DIR    diretório de estado (padrão: /run/rios)
       --once             executa um único ciclo e encerra (mesmo sem aparelho)
-      --max-cycles N     encerra após N ciclos (0 = infinito, padrão)
+      --max-cycles N     encerra após N ciclos — sessões ou esperas sem
+                         aparelho (0 = infinito, padrão)
       --dump-config      imprime a configuração efetiva e encerra
       --check-config     valida a configuração e encerra
   -h, --help             mostra esta ajuda

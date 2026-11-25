@@ -105,6 +105,11 @@ O `status` mostra o **método em uso**:
 
 A cadeia `A → B → C` é automática quando `METHOD=auto` (padrão).
 
+O `status` mostra a **resolução da sessão** gravada pelo daemon (por exemplo,
+`1024x600`), não a resolução do monitor do host, e o **init real** usado pelo
+daemon (direto, systemd ou runit). Se o daemon nunca rodou, ele cai para a tela
+detectada por `xrandr`.
+
 ---
 
 ## 6. Configuração
@@ -250,6 +255,30 @@ tests/run-tests.sh
 
 Os testes usam `adb` e `scrcpy` simulados em [`tests/mock/`](../tests/mock/) e
 não precisam de root, celular ou netbook.
+
+### 7.7 Ensaio na VM Debian 13 (systemd)
+
+A validação do P2 foi repetida no alvo Debian 13 em VM. Sem a unit systemd
+(empacotamento do P3), o caminho é o modo direto:
+
+```sh
+sudo apt install -y adb scrcpy x11-xserver-utils
+scrcpy --version          # no alvo: 5.0
+
+sudo install -m 0755 runtime/rios-session /usr/local/bin/rios-session
+sudo install -m 0755 runtime/rios-launch  /usr/local/bin/rios-launch
+sudo install -d /etc/rios
+sudo install -m 0644 etc/rios/config /etc/rios/config
+
+RIOS_INIT=direct rios-launch start
+rios-launch status        # init=direct; resolução da sessão, não a da VM
+RIOS_INIT=direct rios-launch stop
+```
+
+Na VM a tela aparece como `Virtual-1` (1280×800 neste ensaio). Como o alvo é
+1024×600, force `RESOLUTION=1024x600` no `/etc/rios/config` ou ajuste a tela da
+VM; o `status` deve mostrar a resolução da sessão, não a do monitor. O serviço
+systemd e a instalação na imagem continuam no escopo do P3.
 
 ---
 

@@ -9,6 +9,8 @@
 #   MOCK_ADB_ANDROID     versão do Android (padrão: 16)
 #   MOCK_ADB_SDK         SDK do Android (padrão: 35)
 #   MOCK_ADB_LOCKED      1 simula celular bloqueado
+#   MOCK_ADB_NOISE       1 injeta as linhas de ruído que o adb real emite ao
+#                        iniciar o servidor (testa o parser de `adb devices`)
 #   MOCK_ADB_DIR         diretório de estado/log (padrão: ${TMPDIR:-/tmp})
 #   MOCK_ADB_LOG         arquivo de log de chamadas
 # =============================================================================
@@ -76,6 +78,10 @@ fi
 
 case "$cmd" in
   devices)
+    if [[ "${MOCK_ADB_NOISE:-0}" == "1" ]]; then
+      printf '* daemon started successfully\n'
+      printf 'adb server version (41) does not match this client (39); killing...\n'
+    fi
     printf 'List of devices attached\n'
     case "$state" in
       device)       printf 'MOCK123456\tdevice\n' ;;

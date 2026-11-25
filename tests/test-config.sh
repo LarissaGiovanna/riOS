@@ -26,6 +26,14 @@ check_contains() {
     bad "$label (não encontrado: $pattern)"
   fi
 }
+check_equals_num() {
+  local expected="$1" actual="$2" label="$3"
+  if [[ "$expected" == "$actual" ]]; then
+    ok "$label"
+  else
+    bad "$label (esperado '$expected', obtido '$actual')"
+  fi
+}
 
 # Executa o daemon em modo de inspeção sem criar log em /var/log.
 run_daemon() {
@@ -179,6 +187,23 @@ if RIOS_LOG_DIR="$TMP/log" RIOS_STATE_DIR="$TMP/run" \
 else
   ok "--max-cycles inválido é rejeitado"
 fi
+
+# ---------------------------------------------------------------------------
+# 7. --max-cycles encerra mesmo sem aparelho (cada espera conta um ciclo).
+# ---------------------------------------------------------------------------
+mkdir -p "$TMP/adb"
+if timeout 10 env PATH="${ROOT}/tests/mock:${PATH}" \
+     MOCK_ADB_STATE=none MOCK_ADB_DIR="$TMP/adb" MOCK_ADB_LOG="$TMP/adb-max.log" \
+     RIOS_CONFIG="$TMP/nao-existe.conf" RIOS_LOG_DIR="$TMP/log" \
+     RIOS_STATE_DIR="$TMP/run" \
+     "$DAEMON" --max-cycles 2 >"$TMP/max.out" 2>"$TMP/max.err"; then
+  ok "--max-cycles encerra sem aparelho"
+else
+  bad "--max-cycles travou sem aparelho"
+fi
+check_equals_num "2" "$(grep -c ' adb devices' "$TMP/adb-max.log" 2>/dev/null || true)" \
+  "--max-cycles fez duas detecções"
+check_contains "$TMP/run/status" '^STATE=IDLE$' "status final IDLE após --max-cycles"
 
 printf '\n%d ok, %d falha(s)\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

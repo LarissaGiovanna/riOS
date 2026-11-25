@@ -72,7 +72,7 @@ qual stack foi medida.
 | Fase | Conteúdo | Estado |
 |---|---|---|
 | M0 | Plano de desenvolvimento | ✅ [`PLAN.md`](PLAN.md) |
-| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | 🔄 Em andamento — daemon/CLI validados com adb simulado; falta o serviço runit e a bancada (M1-02) |
+| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | 🔄 Em andamento — daemon/CLI validados com adb simulado no Mint e no Debian 13 (VM); falta o serviço de init e a bancada (M1-02) |
 | M2 | Validação no aparelho real (DeX + teclado/trackpad) | ⬜ |
 | M3 | Build da imagem (`rios.img`) | ⬜ |
 | M4 | Live USB | ⬜ |
@@ -110,10 +110,11 @@ A suíte usa `adb` e `scrcpy` simulados e roda em qualquer Linux com Bash:
 tests/run-tests.sh
 ```
 
-Cobre config, máquina de estados, fallbacks A/B/C, estados de conexão, a CLI e a coleta de
-medições (`tests/test-coleta-desempenho.sh`).
-Os testes que dependem do Galaxy real estão em
-[`tests/PENDING-HARDWARE.md`](tests/PENDING-HARDWARE.md).
+Cobre config, máquina de estados, fallbacks A/B/C, estados de conexão, a CLI e a
+coleta de medições (`tests/test-coleta-desempenho.sh`).
+Os testes do daemon/CLI são **150 casos** e foram executados também na
+**VM Debian 13** (systemd/LXQt), com `scrcpy` 5.0 real; o que depende do Galaxy
+está em [`tests/PENDING-HARDWARE.md`](tests/PENDING-HARDWARE.md).
 
 ## Variantes de entrega
 

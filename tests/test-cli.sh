@@ -98,6 +98,20 @@ check_contains "$TMP/out" 'Daemon.........: ativo' "status mostra daemon ativo"
 check_contains "$TMP/out" 'Estado.........: IDLE' "status mostra estado IDLE"
 check_contains "$TMP/out" 'Aparelho.......: nenhum aparelho conectado' \
   "status mostra ausência de aparelho"
+check_contains "$TMP/out" 'Resolução......: 1024x600' \
+  "status mostra a resolução da sessão, não a do monitor"
+
+# ---------------------------------------------------------------------------
+# 2b. O init mostrado é o que o daemon gravou no status, não o detectado
+#     pela CLI (que diria systemd e esconderia o modo direto).
+# ---------------------------------------------------------------------------
+if env -u RIOS_INIT "$LAUNCH" status >"$TMP/out-noinit" 2>"$TMP/err-noinit"; then
+  ok "status funciona sem RIOS_INIT"
+else
+  bad "status falhou sem RIOS_INIT"
+fi
+check_contains "$TMP/out-noinit" 'Init...........: direct' \
+  "status usa o init real do daemon"
 
 # ---------------------------------------------------------------------------
 # 3. logs mostra o início do daemon.
@@ -154,6 +168,27 @@ else
   cat "$TMP/err" >&2 || true
 fi
 check_contains "$TMP/out" '^16$' "shell devolve a versão do Android simulada"
+export MOCK_ADB_STATE=none
+
+# ---------------------------------------------------------------------------
+# 6b. Ruído do adb (`* daemon started`, `adb server version...`) não pode
+#     virar nome de aparelho no status da CLI.
+# ---------------------------------------------------------------------------
+export MOCK_ADB_STATE=device
+export MOCK_ADB_NOISE=1
+if run_launch status; then
+  ok "status funciona com ruído do adb"
+else
+  bad "status falhou com ruído do adb"
+fi
+check_contains "$TMP/out" 'Aparelho.......: MOCK123456 (autorizado)' \
+  "status ignora linhas de ruído do adb"
+if grep -q 'Aparelho.......: \*' "$TMP/out" 2>/dev/null; then
+  bad "status interpretou o ruído como aparelho"
+else
+  ok "status não interpreta o ruído como aparelho"
+fi
+unset MOCK_ADB_NOISE
 export MOCK_ADB_STATE=none
 
 # ---------------------------------------------------------------------------

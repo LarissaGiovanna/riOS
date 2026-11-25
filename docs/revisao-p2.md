@@ -30,26 +30,60 @@ validação no aparelho real (P1/Larissa).
 
 ## 2. Como validar
 
-Ambiente usado: Linux x86_64, Bash 5, sem celular, sem root, sem `adb`/`scrcpy`
-reais. Todos os testes usam os mocks em `tests/mock/`.
+O ensaio original da revisão rodou no **host Linux Mint**, com o daemon e a
+CLI executados fora do alvo. Isso não exercitava o stack da imagem
+(Debian/systemd/LXQt) nem o `scrcpy` 5.0 instalado no alvo; a resolução da
+sessão também podia ser confundida com a tela do host.
+
+Esta rodada repetiu a validação **dentro da VM Debian 13**, que é o ambiente
+mais próximo do 1015BX disponível sem o Galaxy. Todos os testes continuam
+usando os mocks em `tests/mock/`; não há celular nem root.
+
+| Item | Host original (Mint) | Alvo desta rodada (VM) |
+|---|---|---|
+| Sistema | Linux Mint, x86_64 | **Debian GNU/Linux 13.7 (trixie)**, kernel 6.12.117 |
+| Init | systemd | **systemd 257** |
+| Sessão gráfica | desktop normal | **LXQt 2.1 + SDDM**, X11 (`Virtual-1`) |
+| Resolução | tela do host | **1280×800** na VM; config força **1024×600** |
+| Bash | 5.x | **5.2.37** |
+| adb | não exercitado de verdade | **34.0.5-debian**, sem aparelho |
+| scrcpy | não exercitado de verdade | **5.0** em `/usr/local/bin/scrcpy` |
+| Usuário | comum | **`rios` (uid 1000), sem root** |
 
 ```sh
 tests/run-tests.sh
 ```
 
-Resultado da revisão:
+Resultado da repetição no Debian (a suíte original no Mint tinha **141 casos**;
+os casos novos abaixo vieram desta rodada):
 
-| Arquivo de teste | Casos | Resultado |
+| Arquivo de teste | Casos | Resultado no Debian 13 |
 |---|---:|---|
-| `test-config.sh` | 45 | ✅ |
+| `test-config.sh` | 48 | ✅ |
 | `test-state-machine.sh` | 20 | ✅ |
 | `test-fallback.sh` | 29 | ✅ |
 | `test-device-states.sh` | 25 | ✅ |
-| `test-cli.sh` | 22 | ✅ |
-| **Total** | **141** | **✅ 0 falhas** |
+| `test-cli.sh` | 28 | ✅ |
+| **Total** | **150** | **✅ 0 falhas** |
 
 Além da suíte, foram feitas execuções repetidas do teste de máquina de estados
-(10×) para verificar se havia corrida entre log e status.
+(10×) e três execuções completas da suíte na VM (≈17 s cada) para verificar se
+havia corrida entre log e status. A validação do `scrcpy` real foi limitada ao
+que não depende do Galaxy:
+
+```sh
+scrcpy --help | grep -E -- '--new-display|--max-fps|--video-bit-rate|--render-driver'
+scrcpy --new-display=1024x600/160 --video-codec=h264 --video-bit-rate=4M \
+       --max-fps=15 --render-driver=software --turn-screen-off --keep-active \
+       --mouse=sdk --keyboard=sdk --no-audio --fullscreen
+# código 1 com "Could not find any ADB device": as flags foram aceitas;
+# falta apenas o aparelho para provar a imagem (T4).
+```
+
+Também foram exercitados na VM, sem serviço de init instalado (a unit é P3):
+`--check-config` no template, `--once` sem aparelho, `--max-cycles` sem
+aparelho e a CLI `start/status/logs/restart/stop` em modo direto.
+
 
 ---
 
@@ -61,7 +95,7 @@ intermitente ou diagnóstico errado; **B** = robustez/polimento.
 | # | Sev. | Achado | Correção |
 |---|---|---|---|
 | 1 | **A** | Todos os scripts, mocks e testes estavam versionados como `100644`. Qualquer execução direta falhava com `Permissão negada` (código 126) | `chmod +x` em runtime, mocks, testes, build e scripts; modo `100755` versionado |
-| 2 | **A** | `--once`/`--max-cycles` travavam para sempre quando não havia aparelho ou o `prepare` falhava: o contador só subia após uma sessão bem-sucedida | Flag `ONCE` explícita; `wait_for_device` encerra após uma detecção; o ciclo é contado mesmo sem sessão |
+| 2 | **A** | `--once` travava para sempre quando não havia aparelho ou o `prepare` falhava: o contador só subia após uma sessão bem-sucedida (`--max-cycles` tinha o mesmo problema; ver achado 14) | Flag `ONCE` explícita; `wait_for_device` encerra após uma detecção |
 | 3 | **M** | O log anunciava `estado=RUNNING` antes de o arquivo de status ser atualizado; a CLI podia ler o estado anterior | `status_write` passou a rodar **antes** do `log` em `set_state` |
 | 4 | **M** | No modo direto da CLI, o `stderr` do daemon ia para o mesmo arquivo de log, duplicando cada linha | `nohup … >/dev/null 2>&1`; o daemon já grava no próprio log |
 | 5 | **M** | Inteiros com zero à esquerda (`015`, `02`) eram aceitos e interpretados como **octal** pela aritmética do Bash | Normalização com `10#` no parsing do config e em `--max-cycles` |
@@ -73,6 +107,10 @@ intermitente ou diagnóstico errado; **B** = robustez/polimento.
 | 11 | **M** | A suíte de fallback só testava o caso “todos falham”; não provava que B ou C **assumem** a sessão | Cenários novos: só A falha → B; A e B falham → C |
 | 12 | **M** | Não havia teste da CLI nem das mensagens de tela de espera | `test-cli.sh` e `test-device-states.sh` |
 | 13 | **B** | Não havia um comando único para rodar a suíte | `tests/run-tests.sh` com resumo e filtro |
+| 14 | **M** | O `--max-cycles` ainda travava sem aparelho: só o `--once` encerrava, porque o contador só subia depois de uma sessão | Cada espera sem aparelho também conta um ciclo; `--max-cycles N` encerra em N detecções (documentado na ajuda e coberto por teste) |
+| 15 | **M** | O `rios-launch status` mostrava a resolução do **monitor do host** via `xrandr` (1920×1080 no Mint, 1280×800 na VM), não a resolução da sessão DeX (1024×600) | O status lê `RESOLUTION` do arquivo do daemon e só usa `xrandr` quando nunca houve sessão |
+| 16 | **B** | O parser de `adb devices` da CLI não ignorava as linhas de ruído (`* daemon started`, `adb server version...`); o daemon já ignorava | Mesmo filtro do daemon (`List`, `*`, `adb`), com cenário de ruído no mock e na CLI |
+| 17 | **B** | O status mostrava o init **detectado** pela CLI (`systemd`), mesmo quando o daemon tinha sido iniciado em modo direto | Com daemon ativo, o init vem do arquivo de status, que registra o modo real |
 
 ### Achados que ficaram como limitação (não são bugs de código)
 
@@ -80,9 +118,8 @@ intermitente ou diagnóstico errado; **B** = robustez/polimento.
 |---|---|---|---|
 | L1 | O watchdog detecta **processo vivo**, não **imagem preta** | Detectar pixels exigiria inspecionar a janela/X11 ou o fluxo do scrcpy; o comportamento varia com o driver | Medir na bancada (T4/T7) e, se necessário, usar `xdotool`/captura de janela na v2 |
 | L2 | A detecção de bloqueio é heurística (`dumpsys window`) | O texto do keyguard muda entre One UI/Android | Validar no Galaxy (T3) e ajustar o padrão se necessário |
-| L3 | `--max-cycles N` conta sessões, não tentativas de detecção | Semântica documentada; `--once` cobre o uso de diagnóstico | Reavaliar se a bancada precisar de “N polls” |
-| L4 | A limpeza do `overlay_display_devices` não consegue falar com o celular depois do unplug físico | O adb não tem mais transporte; o próximo ciclo sobrescreve/apaga | Documentado em `TROUBLESHOOTING.md` §6 |
-| L5 | Sem validação no aparelho real | Depende da Larissa e do Galaxy | Sessão de bancada com o roteiro da seção 5 |
+| L3 | A limpeza do `overlay_display_devices` não consegue falar com o celular depois do unplug físico | O adb não tem mais transporte; o próximo ciclo sobrescreve/apaga | Documentado em `TROUBLESHOOTING.md` §6 |
+| L4 | Sem validação no aparelho real | Depende da Larissa e do Galaxy | Sessão de bancada com o roteiro da seção 5 |
 
 ---
 
@@ -98,7 +135,19 @@ intermitente ou diagnóstico errado; **B** = robustez/polimento.
   bloqueado e adb ausente;
 - os três settings globais aplicados;
 - a CLI `start/status/logs/restart/stop/shell` e o modo direto;
-- o encerramento determinístico de `--once`, inclusive sem aparelho.
+- o encerramento determinístico de `--once` e de `--max-cycles`, inclusive
+  sem aparelho;
+- que o status reporta a resolução e o init da sessão, não os do host;
+- que as linhas de ruído do `adb` não viram nome de aparelho na CLI.
+
+**Provam também, na VM Debian 13 (o alvo mais próximo):**
+
+- que a suíte inteira e a CLI em modo direto funcionam no stack
+  Debian/systemd/LXQt, com Bash 5.2 e `adb` real instalado (sem aparelho);
+- que o `scrcpy` 5.0 do alvo aceita todas as flags dos métodos A/B/C; a
+  execução sem Galaxy para em “Could not find any ADB device”, como esperado;
+- que o status não confunde mais a tela `Virtual-1` 1280×800 da VM com a
+  sessão 1024×600.
 
 **Não provam:**
 
@@ -146,10 +195,15 @@ Em cada passo: anotar data, versão do One UI, versão do scrcpy, método, e ane
 ## 6. Critérios de aceite da revisão
 
 - [x] `tests/run-tests.sh` passa inteiro sem root, celular ou rede.
+- [x] A suíte e a CLI passam dentro da VM **Debian 13** (systemd/LXQt), não só
+      no host Mint.
 - [x] `rios-session --check-config` aceita o template `etc/rios/config`.
 - [x] `--once` encerra em todos os estados (inclusive sem aparelho).
+- [x] `--max-cycles N` encerra sem aparelho depois de N detecções.
 - [x] Fallbacks A, B e C são exercitados com sucesso e com falha.
-- [x] CLI cobre start/status/logs/restart/stop/shell.
+- [x] CLI cobre start/status/logs/restart/stop/shell e ruído do `adb`.
+- [x] `status` mostra a resolução/init da sessão e o `scrcpy` 5.0 aceita as
+      flags reais do alvo.
 - [x] `OPERATOR.md` e `TROUBLESHOOTING.md` publicados.
 - [ ] T3–T7 validados no Galaxy real (P1).
 - [ ] Limitações L1/L2 reavaliadas após a bancada.
@@ -172,6 +226,13 @@ runtime/rios-session --dump-config
 # um ciclo só, com diretórios temporários
 RIOS_LOG_DIR=/tmp/rios-log RIOS_STATE_DIR=/tmp/rios-run \
   runtime/rios-session --once
+
+# duas detecções e encerra, mesmo sem aparelho
+RIOS_LOG_DIR=/tmp/rios-log RIOS_STATE_DIR=/tmp/rios-run \
+  runtime/rios-session --max-cycles 2
+
+# repetir a suíte no alvo Debian 13 (VM)
+bash tests/run-tests.sh
 
 # CLI em modo direto (sem systemd/runit)
 RIOS_INIT=direct runtime/rios-launch start
