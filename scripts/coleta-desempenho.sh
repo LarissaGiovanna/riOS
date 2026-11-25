@@ -32,6 +32,7 @@
 # =============================================================================
 
 set -u
+export LC_NUMERIC=C
 # pipefail é do bash; em dash o teste abaixo falha e o script segue sem ele.
 (set -o pipefail) 2>/dev/null && set -o pipefail
 
