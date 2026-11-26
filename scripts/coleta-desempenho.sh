@@ -387,12 +387,12 @@ ler_zram_usada() {
 ler_temp() {
     _t=""
     if [ "$TEM_ZONAS" -eq 1 ]; then
-        _t="$(awk '{v=$1/1000; if (v>m) m=v} END{ if (NR>0) printf "%.1f", m }' \
+        _t="$(LC_ALL=C awk '{v=$1/1000; if (v>m) m=v} END{ if (NR>0) printf "%.1f", m }' \
               /sys/class/thermal/thermal_zone*/temp 2>/dev/null)"
     fi
     if [ -z "$_t" ] && tem sensors; then
         _t="$(sensors 2>/dev/null | sed -n 's/.*[+ ]\([0-9][0-9]*\(\.[0-9]*\)\?\)°C.*/\1/p' \
-              | sort -n | tail -1)"
+              | LC_ALL=C sort -n | tail -1 | tr "," ".")"
     fi
     printf '%s' "$_t"
 }
