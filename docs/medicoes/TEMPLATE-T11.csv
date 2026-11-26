@@ -1,0 +1,10 @@
+timestamp,fase,cpu_pct,ram_mb,swap_mb,zram_mb,temp_cpu_c,pid_scrcpy,metodo,condicao,repeticao,obs
+# Formato: uma linha por amostra (intervalo padrão 5s)
+# fase: aquecimento | repouso | carga
+# metodo: auto | A | B | C
+# condicao: C0 (bancada Void) | C1 (imagem Debian)
+# repeticao: 1 | 2 | 3
+# obs: texto livre sem vírgula
+# Valores ausentes: deixar o campo vazio (,,)
+# Exemplo:
+# 2026-11-25 10:00:00,repouso,32.1,380,0,120,58.0,12345,A,C0,1,
