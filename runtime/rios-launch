@@ -11,6 +11,7 @@
 #   shell    abre um shell adb no celular conectado
 #
 # Detecta automaticamente o init: systemd (/run/systemd/system) ou runit (sv).
+# No systemd, prefere a unidade de usuário e cai para a de sistema.
 # =============================================================================
 set -euo pipefail
 
@@ -63,6 +64,36 @@ detect_init() {
   fi
 }
 
+# Escopo do serviço systemd: unidade de usuário, unidade de sistema ou nenhuma.
+# RIOS_SERVICE_SCOPE tem prioridade (útil em testes).
+detect_service_scope() {
+  if [[ -n "${RIOS_SERVICE_SCOPE:-}" ]]; then
+    printf '%s' "$RIOS_SERVICE_SCOPE"
+    return 0
+  fi
+  if [[ "$(detect_init)" != "systemd" ]] || ! command -v systemctl >/dev/null 2>&1; then
+    printf 'none'
+    return 0
+  fi
+  if systemctl --user cat "$SERVICE" >/dev/null 2>&1; then
+    printf 'user'
+  elif systemctl cat "$SERVICE" >/dev/null 2>&1; then
+    printf 'system'
+  else
+    printf 'none'
+  fi
+}
+
+systemctl_svc() {
+  local scope="$1"
+  shift
+  case "$scope" in
+    user) systemctl --user "$@" ;;
+    system) systemctl "$@" ;;
+    *) return 1 ;;
+  esac
+}
+
 # Verifica se um PID está vivo (ignora zumbis).
 pid_alive() {
   local pid="${1:-}"
@@ -96,10 +127,18 @@ status_get() {
 
 # Verifica se o serviço está ativo no init atual.
 service_active() {
-  local init="$1"
+  local init="$1" scope="${2:-}"
+  [[ -n "$scope" ]] || scope="$(detect_service_scope)"
   case "$init" in
     systemd)
-      systemctl is-active --quiet "$SERVICE" 2>/dev/null && return 0
+      case "$scope" in
+        user)
+          systemctl --user is-active --quiet "$SERVICE" 2>/dev/null && return 0
+          ;;
+        system)
+          systemctl is-active --quiet "$SERVICE" 2>/dev/null && return 0
+          ;;
+      esac
       ;;
     runit)
       if command -v sv >/dev/null 2>&1 && sv status "$SERVICE" 2>/dev/null | grep -q '^run:'; then
@@ -181,8 +220,9 @@ process_usage() {
 
 # Subcomando status.
 cmd_status() {
-  local init state pid scrcpy_pid cpu_line status_init
+  local init state pid scrcpy_pid cpu_line status_init scope servico
   init="$(detect_init)"
+  scope="$(detect_service_scope)"
   state="$(status_get STATE || true)"
   pid="$(daemon_pid || true)"
   scrcpy_pid="$(status_get SCRCPY_PID || true)"
@@ -193,8 +233,33 @@ cmd_status() {
     init="$status_init"
   fi
 
+  case "$scope" in
+    user)
+      if systemctl_svc user is-active --quiet "$SERVICE" 2>/dev/null; then
+        servico="ativo (usuário)"
+      else
+        servico="parado"
+      fi
+      ;;
+    system)
+      if systemctl_svc system is-active --quiet "$SERVICE" 2>/dev/null; then
+        servico="ativo (sistema)"
+      else
+        servico="parado"
+      fi
+      ;;
+    *)
+      if [[ "$init" == "direct" ]]; then
+        servico="—"
+      else
+        servico="não instalado"
+      fi
+      ;;
+  esac
+
   printf 'riOS — status da sessão\n'
   printf '  Init...........: %s\n' "$init"
+  printf '  Serviço........: %s\n' "$servico"
   if [[ -n "$pid" ]]; then
     printf '  Daemon.........: ativo (PID %s)\n' "$pid"
   else
@@ -254,22 +319,28 @@ direct_start() {
 
 # Subcomando start.
 cmd_start() {
-  local init
+  local init scope
   init="$(detect_init)"
+  scope="$(detect_service_scope)"
   mkdir -p "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
   case "$init" in
     direct)
       direct_start
       ;;
     systemd)
-      if service_active "$init"; then
-        printf 'riOS já está em execução (systemd).\n'
+      if [[ "$scope" == "none" ]]; then
+        printf 'aviso: unidade systemd não instalada; iniciando em modo direto.\n'
+        direct_start
         return 0
       fi
-      if systemctl start "$SERVICE" 2>/dev/null; then
-        printf 'riOS iniciado via systemd (%s.service).\n' "$SERVICE"
+      if service_active "$init" "$scope"; then
+        printf 'riOS já está em execução (systemd, %s).\n' "$scope"
+        return 0
+      fi
+      if systemctl_svc "$scope" start "$SERVICE" 2>/dev/null; then
+        printf 'riOS iniciado via systemd (%s, %s).\n' "$SERVICE" "$scope"
       else
-        printf 'aviso: serviço systemd não disponível; iniciando em modo direto.\n'
+        printf 'aviso: serviço systemd (%s) não iniciou; iniciando em modo direto.\n' "$scope"
         direct_start
       fi
       ;;
@@ -315,16 +386,21 @@ direct_stop() {
 
 # Subcomando stop.
 cmd_stop() {
-  local init
+  local init scope
   init="$(detect_init)"
+  scope="$(detect_service_scope)"
   case "$init" in
     direct)
       direct_stop
       ;;
     systemd)
-      if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
-        systemctl stop "$SERVICE"
-        printf 'riOS encerrado via systemd.\n'
+      if [[ "$scope" == "none" ]]; then
+        direct_stop
+        return 0
+      fi
+      if systemctl_svc "$scope" is-active --quiet "$SERVICE" 2>/dev/null; then
+        systemctl_svc "$scope" stop "$SERVICE"
+        printf 'riOS encerrado via systemd (%s).\n' "$scope"
       else
         direct_stop
       fi
@@ -353,7 +429,7 @@ cmd_restart() {
 
 # Subcomando logs: mostra as últimas linhas e, com -f, acompanha.
 cmd_logs() {
-  local follow=0
+  local follow=0 init scope
   [[ "${1:-}" == "-f" || "${1:-}" == "--follow" ]] && follow=1
   if [[ -r "$LOG_FILE" ]]; then
     if (( follow == 1 )); then
@@ -363,12 +439,18 @@ cmd_logs() {
     fi
     return 0
   fi
-  if [[ "$(detect_init)" == "systemd" ]] && command -v journalctl >/dev/null 2>&1; then
-    if (( follow == 1 )); then
-      journalctl -u "$SERVICE" -n 100 -f
-    else
-      journalctl -u "$SERVICE" -n 100
+  init="$(detect_init)"
+  scope="$(detect_service_scope)"
+  if [[ "$init" == "systemd" ]] && command -v journalctl >/dev/null 2>&1; then
+    local -a cmd=(journalctl)
+    if [[ "$scope" == "user" ]]; then
+      cmd+=(--user)
     fi
+    cmd+=(-u "$SERVICE" -n 100)
+    if (( follow == 1 )); then
+      cmd+=(-f)
+    fi
+    "${cmd[@]}"
     return 0
   fi
   printf 'nenhum log encontrado em %s\n' "$LOG_FILE"
@@ -397,7 +479,7 @@ Uso:
   rios-launch <comando>
 
 Comandos:
-  start     inicia o daemon (systemd, runit ou modo direto)
+  start     inicia o daemon (systemd de usuário/sistema, runit ou modo direto)
   stop      encerra o daemon
   restart   reinicia o daemon
   status    aparelho, resolução, método, PID do scrcpy, CPU e RAM
@@ -406,6 +488,7 @@ Comandos:
 
 O init é detectado automaticamente: systemd (/run/systemd/system) ou runit (sv).
 RIOS_INIT=systemd|runit|direct força um modo (útil em testes).
+RIOS_SERVICE_SCOPE=user|system|none força o escopo do serviço systemd.
 USAGE
 }
 
