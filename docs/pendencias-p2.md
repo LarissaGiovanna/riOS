@@ -16,6 +16,8 @@ aparelho real.
   direto e `scrcpy` 5.0 real (flags aceitas; sem Galaxy não há imagem).
 - Serviço systemd **de usuário**: unidade, espera pela sessão X, instalador
   idempotente e CLI reconhecendo `systemctl --user`/`journalctl --user`.
+  Instalado e confirmado após reboot na VM Debian 13: serviço habilitado/ativo,
+  tela de espera em `IDLE` e `rios-launch status` com `ativo (usuário)`.
 - `--max-cycles` encerra sem aparelho; `status` mostra resolução/init da
   sessão; parser da CLI ignora ruído do `adb`.
 - `docs/OPERATOR.md`, `docs/TROUBLESHOOTING.md` e `docs/revisao-p2.md`.
@@ -49,10 +51,10 @@ Roteiro detalhado em [`revisao-p2.md`](revisao-p2.md) §5 e matriz em
    As mensagens existem no daemon, mas a instalação do visualizador/atalho na
    imagem ainda não foi feita.
 3. **Instalação canônica e boot do serviço.**
-   A unidade de usuário, o instalador e os logs (journal + arquivo rotativo)
-   estão prontos e cobertos por teste. A unidade foi exercitada na VM com o
-   runtime em `~/.local` (sem root); falta instalar em `/usr/local` com
-   `sudo scripts/install-runtime.sh --user rios` e validar o boot com autologin.
+   Validado na VM Debian 13: `sudo scripts/install-runtime.sh --user rios`
+   instalou em `/usr/local`, habilitou a unidade de usuário e o reboot iniciou
+   o daemon com a sessão gráfica. Restam apenas a confirmação física no netbook
+   Void/runit, caso esse caminho seja retomado.
 4. **Presets `PROFILE`.**
    O `PLAN.md` prevê perfis de resolução/FPS; o daemon ainda não os aplica.
 5. **Checagem de versão do scrcpy.**

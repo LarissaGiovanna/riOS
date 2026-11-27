@@ -206,6 +206,8 @@ Em cada passo: anotar data, versão do One UI, versão do scrcpy, método, e ane
 - [x] CLI cobre start/status/logs/restart/stop/shell e ruído do `adb`.
 - [x] `status` mostra a resolução/init da sessão e o `scrcpy` 5.0 aceita as
       flags reais do alvo.
+- [x] A unidade de usuário foi instalada na VM Debian 13 e subiu após reboot,
+      com `Serviço: ativo (usuário)` e status `IDLE` sem aparelho.
 - [x] `OPERATOR.md` e `TROUBLESHOOTING.md` publicados.
 - [ ] T3–T7 validados no Galaxy real (P1).
 - [ ] Limitações L1/L2 reavaliadas após a bancada.

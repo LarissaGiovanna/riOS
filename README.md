@@ -72,7 +72,7 @@ qual stack foi medida.
 | Fase | Conteúdo | Estado |
 |---|---|---|
 | M0 | Plano de desenvolvimento | ✅ [`PLAN.md`](PLAN.md) |
-| M1 | Daemon do kiosk e serviço de sessão na bancada | 🔄 Em andamento — daemon/CLI, unidade systemd de usuário e instalador validados com adb simulado na VM Debian 13 (**237 casos**); falta a bancada com o Galaxy e o boot no hardware |
+| M1 | Daemon do kiosk e serviço de sessão na bancada | 🔄 Em andamento — daemon/CLI, unidade systemd de usuário e instalador validados na VM Debian 13 (**237 casos**); serviço confirmado após reboot, com o ambiente gráfico e a CLI; falta a bancada com o Galaxy |
 | M2 | Validação no aparelho real (DeX + teclado/trackpad) | ⬜ |
 | M3 | Build da imagem (`rios.img`) | ⬜ |
 | M4 | Live USB | ⬜ |
