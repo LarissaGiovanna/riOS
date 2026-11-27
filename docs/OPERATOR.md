@@ -88,7 +88,7 @@ economizar bateria. O DeX continua rodando.
 rios-launch status          # aparelho, resolução, método, PID do scrcpy, CPU e RAM
 rios-launch logs            # últimas 100 linhas do log
 rios-launch logs -f         # acompanha em tempo real
-rios-launch start           # inicia o daemon (systemd, runit ou modo direto)
+rios-launch start           # inicia o daemon (systemd de usuário/sistema, runit ou modo direto)
 rios-launch stop            # encerra o daemon e limpa a sessão
 rios-launch restart         # stop + start
 rios-launch shell           # shell adb no celular conectado
@@ -108,7 +108,9 @@ A cadeia `A → B → C` é automática quando `METHOD=auto` (padrão).
 O `status` mostra a **resolução da sessão** gravada pelo daemon (por exemplo,
 `1024x600`), não a resolução do monitor do host, e o **init real** usado pelo
 daemon (direto, systemd ou runit). Se o daemon nunca rodou, ele cai para a tela
-detectada por `xrandr`.
+detectada por `xrandr`. Com serviço systemd, a linha `Serviço` indica o escopo:
+`ativo (usuário)` para a unidade de usuário da VM, `ativo (sistema)` para a
+unidade de sistema, ou `não instalado`.
 
 ---
 
@@ -148,10 +150,12 @@ mantido.
 
 ---
 
-## 7. Instalação na bancada (M1 — Void Linux + runit)
+## 7. Instalação na bancada (M1 — Void Linux + runit e VM Debian)
 
 A fase M1 roda na instalação que já existe no netbook, sem trocar o sistema.
 A imagem final (Debian + systemd) é assunto do [`BUILD.md`](BUILD.md).
+A validação atual da M1 também roda na VM Debian 13; o serviço systemd dessa VM
+está na seção 7.7.
 
 ### 7.1 Dependências
 
@@ -256,29 +260,74 @@ tests/run-tests.sh
 Os testes usam `adb` e `scrcpy` simulados em [`tests/mock/`](../tests/mock/) e
 não precisam de root, celular ou netbook.
 
-### 7.7 Ensaio na VM Debian 13 (systemd)
+### 7.7 Instalação na VM Debian 13 (systemd)
 
-A validação do P2 foi repetida no alvo Debian 13 em VM. Sem a unit systemd
-(empacotamento do P3), o caminho é o modo direto:
+A validação da M1 roda na VM Debian 13 com systemd, SDDM e LXQt. O serviço é
+uma unidade **de usuário**, porque o SDDM usa um `XAUTHORITY` temporário e as
+chaves do `adb` pertencem ao usuário da sessão.
+
+Dependências:
 
 ```sh
 sudo apt install -y adb scrcpy x11-xserver-utils
-scrcpy --version          # no alvo: 5.0
-
-sudo install -m 0755 runtime/rios-session /usr/local/bin/rios-session
-sudo install -m 0755 runtime/rios-launch  /usr/local/bin/rios-launch
-sudo install -d /etc/rios
-sudo install -m 0644 etc/rios/config /etc/rios/config
-
-RIOS_INIT=direct rios-launch start
-rios-launch status        # init=direct; resolução da sessão, não a da VM
-RIOS_INIT=direct rios-launch stop
+adb version        # na VM: 34.0.5-debian
+scrcpy --version   # 5.0
 ```
 
-Na VM a tela aparece como `Virtual-1` (1280×800 neste ensaio). Como o alvo é
-1024×600, force `RESOLUTION=1024x600` no `/etc/rios/config` ou ajuste a tela da
-VM; o `status` deve mostrar a resolução da sessão, não a do monitor. O serviço
-systemd e a instalação na imagem continuam no escopo do P3.
+Instalação:
+
+```sh
+sudo scripts/install-runtime.sh --user "$USER"
+```
+
+O instalador copia o runtime para `/usr/local/bin`, o config para
+`/etc/rios/config` (sem sobrescrever), a unidade para
+`~/.config/systemd/user/rios-session.service` e adiciona o usuário aos grupos
+`audio video input`. Para simular: `--dry-run`; para remover: `--uninstall`
+(ou `--uninstall --purge` para apagar também o config).
+
+Verificação:
+
+```sh
+systemctl --user is-enabled rios-session
+systemctl --user status rios-session
+rios-launch status
+```
+
+O `status` deve mostrar `Init...........: systemd` e
+`Serviço........: ativo (usuário)`. Os logs ficam no journal e no arquivo
+rotativo:
+
+```sh
+journalctl --user -u rios-session -f
+tail -f ~/.local/state/rios/log/rios-session.log
+```
+
+Operação do dia a dia (a CLI faz o mesmo pelo escopo detectado):
+
+```sh
+rios-launch restart                 # ou: systemctl --user restart rios-session
+rios-launch stop                    # ou: systemctl --user stop rios-session
+systemctl --user disable --now rios-session   # não subir mais no login
+```
+
+Para aplicar uma unidade editada, rode `systemctl --user daemon-reload` antes do
+`restart`.
+
+Após reiniciar (`sudo reboot`), com o autologin do SDDM, o serviço deve subir
+sozinho. Confirme com:
+
+```sh
+systemctl --user is-active rios-session
+rios-launch status
+```
+
+Na VM a tela é `Virtual-1` em 1280×800. Como o alvo é 1024×600, force
+`RESOLUTION=1024x600` no `/etc/rios/config` para o ensaio. O `status` deve
+mostrar a resolução da sessão, não a do monitor.
+
+**Não** use o autostart da seção 7.4 junto com o serviço systemd: seriam dois
+daemons disputando o mesmo celular.
 
 ---
 
@@ -293,9 +342,11 @@ adb shell settings get global overlay_display_devices
 ```
 
 O log fica em `/var/log/rios/rios-session.log` quando o daemon roda como root
-(serviço) ou em `~/.local/state/rios/log/rios-session.log` quando roda como
-usuário (autostart); o log do scrcpy fica ao lado. O status corrente fica em
-`/run/rios/status` (root) ou `$XDG_RUNTIME_DIR/rios/status` (usuário).
+(serviço de sistema) ou em `~/.local/state/rios/log/rios-session.log` quando
+roda como usuário (autostart ou serviço de usuário); o log do scrcpy fica ao
+lado. O status corrente fica em `/run/rios/status` (root) ou
+`$XDG_RUNTIME_DIR/rios/status` (usuário). Com o serviço de usuário,
+`rios-launch logs` também consulta `journalctl --user -u rios-session`.
 
 Se `rios-launch status` disser **parado** mas o processo existir, o arquivo de
 PID pode estar velho; `rios-launch restart` resolve. Se o problema persistir,
