@@ -47,8 +47,67 @@ sudo apt install -y \
     util-linux \
     wget \
     ca-certificates \
-    rsync
+    rsync \
+    git
 ```
+### 2.3 Ambiente de Build Validado
+
+O ambiente utilizado para preparar e validar o host de construção foi:
+
+| Componente | Versão / Informação |
+|---|---|
+| Sistema operacional | Linux Mint 22.3 (Zena) |
+| Arquitetura | x86_64 |
+| Base da distribuição | Ubuntu 24.04 (Noble) |
+| glibc | 2.39 |
+| debootstrap | 1.0.134ubuntu2 |
+| parted | 3.6-4build1 |
+| grub-efi-amd64 | 2.12-1ubuntu7.3 |
+| dosfstools | 4.2-1.1build1 |
+| e2fsprogs | 1.47.0-2.4~exp1ubuntu4.1 |
+| util-linux | 2.39.3-9ubuntu6.6 |
+| wget | 1.21.4-1ubuntu4.5 |
+| rsync | 3.2.7-1ubuntu1.5 |
+| git | 1:2.43.0-1ubuntu7.4 |
+
+**Versão do scrcpy oficial:**
+
+- Versão: `5.0`
+- Arquivo: `scrcpy-linux-x86_64-v5.0.tar.gz`
+- SHA-256: `f052ad9eb981879e8c5f066c5ef122b39b6c9853b383d6497219030e6549baed`
+- Origem: [GitHub – Genymobile/scrcpy](https://github.com/Genymobile/scrcpy/releases/tag/v5.0)
+
+O executável oficial foi baixado, teve sua integridade verificada pelo SHA-256 e retornou corretamente a versão `scrcpy 5.0` no host Linux Mint.
+
+**Fallback:** caso a instalação pelo tarball oficial não seja possível, o script tenta instalar o pacote `scrcpy` pelo repositório Debian Trixie Backports.
+
+### 2.4 Validação do scrcpy no Debian Trixie
+
+Os testes foram realizados em um ambiente Debian Trixie x86_64 criado com `debootstrap`, isolado do sistema hospedeiro Linux Mint.
+
+**1. Teste do tarball oficial**
+
+- Versão testada: `scrcpy 5.0`.
+- URL: `https://github.com/Genymobile/scrcpy/releases/download/v5.0/scrcpy-linux-x86_64-v5.0.tar.gz`.
+- SHA-256 conferido com sucesso.
+- glibc do Debian Trixie: `2.41`.
+- Executável iniciado corretamente com `scrcpy --version`.
+- Dependências verificadas com `ldd`, sem bibliotecas ausentes (`not found`).
+
+**Resultado:** compatibilidade de inicialização confirmada no Debian Trixie.
+
+**2. Teste do fallback pelo Trixie Backports**
+
+- Repositório: `trixie-backports`.
+- Pacote: `scrcpy`.
+- Versão disponibilizada: `3.3.4-1~bpo13+1`.
+- Arquitetura: `amd64`.
+- Instalação realizada com sucesso usando `apt-get install -t trixie-backports scrcpy`.
+- Executável iniciado e dependências apresentadas corretamente.
+
+**Resultado:** fallback instalado e testado com sucesso.
+
+**Conclusão:** o tarball oficial do scrcpy 5.0 é compatível com o ambiente Debian Trixie testado. O pacote scrcpy 3.3.4 do Trixie Backports permanece como alternativa caso a instalação pelo tarball oficial não seja possível.
 
 ---
 

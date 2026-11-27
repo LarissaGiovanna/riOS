@@ -32,7 +32,7 @@
 # ==============================================================================
 
 SCRCPY_VERSION=5.0
-SCRCPY_SHA256=placeholder
+SCRCPY_SHA256=f052ad9eb981879e8c5f066c5ef122b39b6c9853b383d6497219030e6549baed
 ADB_PACKAGE=adb
 KERNEL_PACKAGE=linux-image-amd64
 DEBIAN_SUITE=trixie

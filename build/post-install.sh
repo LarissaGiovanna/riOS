@@ -66,6 +66,14 @@ EOF
 # 3. Atualizar APT e Instalar Pacotes Essenciais
 # ------------------------------------------------------------------------------
 log_info "Atualizando repositórios APT..."
+
+# Habilitar Debian Trixie Backports para fallback do scrcpy
+mkdir -p /etc/apt/sources.list.d
+
+cat > /etc/apt/sources.list.d/trixie-backports.list <<'EOF'
+deb http://deb.debian.org/debian trixie-backports main contrib non-free-firmware
+EOF
+
 apt-get update
 
 PKGS=(
@@ -132,7 +140,7 @@ fi
 
 if [ "$SCRCPY_INSTALLED" = false ]; then
     log_warn "Não foi possível instalar scrcpy via tarball oficial. Instalando via apt..."
-    apt-get install -y scrcpy || log_warn "Aviso: pacote scrcpy não disponível via apt no momento."
+    apt-get install -y -t trixie-backports scrcpy || log_warn "Aviso: pacote scrcpy não disponível via Trixie Backports."
 fi
 
 # ------------------------------------------------------------------------------
