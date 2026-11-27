@@ -1,0 +1,17 @@
+[Unit]
+Description=riOS — sessão DeX (kiosk)
+After=graphical-session.target
+PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStartPre=/usr/local/lib/rios/wait-display.sh
+ExecStart=/usr/local/bin/rios-session
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

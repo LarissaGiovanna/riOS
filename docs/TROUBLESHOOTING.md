@@ -54,7 +54,7 @@ lsusb
 | `rios-launch start` → “daemon não encontrado ou sem permissão” | Arquivo sem bit de execução ou fora do `PATH` | `chmod +x runtime/rios-session`; instale em `/usr/local/bin` (seção 7 do `OPERATOR.md`) |
 | `Permissão negada` ao rodar testes ou o daemon | O repositório foi clonado sem os bits de execução | `chmod +x runtime/rios-session runtime/rios-launch tests/mock/* tests/test-*.sh tests/run-tests.sh` |
 | Daemon encerra logo após iniciar | Configuração inválida ou dependência ausente | `rios-session --check-config`; `rios-launch logs` |
-| `systemctl`/`sv` diz que o serviço não existe | Serviço não instalado | Use o autostart do `OPERATOR.md` §7.4, o serviço runit do §7.5 ou o modo direto do §7.7 (VM Debian sem unit) |
+| `systemctl`/`sv` diz que o serviço não existe | Serviço não instalado | Use o autostart do `OPERATOR.md` §7.4, o serviço runit do §7.5 ou o instalador da VM Debian do §7.7 |
 | `status` mostra uma resolução que não é a da sessão | Versão antiga da CLI lia o `xrandr` do host | Atualize a CLI (o status usa `RESOLUTION` do daemon) ou force `RESOLUTION=1024x600` no `/etc/rios/config` |
 | `status` diz `systemd` mas o daemon foi iniciado direto | A CLI mostrava o init detectado, não o usado | Atualize a CLI; o status passa a ler o init do arquivo do daemon |
 | Dois daemons brigando pelo mesmo celular | Autostart **e** serviço de init ativos | Escolha um dos dois e desligue o outro |

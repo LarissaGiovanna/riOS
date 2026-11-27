@@ -55,7 +55,7 @@ tests/run-tests.sh
 ```
 
 Resultado da repetição no Debian (a suíte original no Mint tinha **141 casos**;
-os casos novos abaixo vieram desta rodada):
+os casos novos abaixo vieram das rodadas seguintes):
 
 | Arquivo de teste | Casos | Resultado no Debian 13 |
 |---|---:|---|
@@ -64,7 +64,9 @@ os casos novos abaixo vieram desta rodada):
 | `test-fallback.sh` | 29 | ✅ |
 | `test-device-states.sh` | 25 | ✅ |
 | `test-cli.sh` | 28 | ✅ |
-| **Total** | **150** | **✅ 0 falhas** |
+| `test-coleta-desempenho.sh` | 30 | ✅ |
+| `test-service.sh` | 57 | ✅ |
+| **Total** | **237** | **✅ 0 falhas** |
 
 Além da suíte, foram feitas execuções repetidas do teste de máquina de estados
 (10×) e três execuções completas da suíte na VM (≈17 s cada) para verificar se
@@ -204,6 +206,8 @@ Em cada passo: anotar data, versão do One UI, versão do scrcpy, método, e ane
 - [x] CLI cobre start/status/logs/restart/stop/shell e ruído do `adb`.
 - [x] `status` mostra a resolução/init da sessão e o `scrcpy` 5.0 aceita as
       flags reais do alvo.
+- [x] A unidade de usuário foi instalada na VM Debian 13 e subiu após reboot,
+      com `Serviço: ativo (usuário)` e status `IDLE` sem aparelho.
 - [x] `OPERATOR.md` e `TROUBLESHOOTING.md` publicados.
 - [ ] T3–T7 validados no Galaxy real (P1).
 - [ ] Limitações L1/L2 reavaliadas após a bancada.

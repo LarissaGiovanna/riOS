@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -u
+
+LOG="${MOCK_JOURNAL_LOG:-${TMPDIR:-/tmp}/mock-journalctl.log}"
+mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
+printf '%s\n' "$*" >>"$LOG" 2>/dev/null || true
+exit 0

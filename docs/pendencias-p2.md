@@ -2,7 +2,7 @@
 
 Resumo curto das lacunas depois da revisão do daemon/CLI (ver
 [`revisao-p2.md`](revisao-p2.md)). A suíte passa com adb/scrcpy simulados
-(150 casos), inclusive na VM Debian 13, mas isso **não** equivale a validar no
+(237 casos), inclusive na VM Debian 13, mas isso **não** equivale a validar no
 aparelho real.
 
 ---
@@ -14,11 +14,14 @@ aparelho real.
 - Máquina de estados, hotplug simulado, config e CLI cobertos por teste.
 - Validação repetida no alvo **Debian 13 (VM)**: suíte inteira, CLI em modo
   direto e `scrcpy` 5.0 real (flags aceitas; sem Galaxy não há imagem).
+- Serviço systemd **de usuário**: unidade, espera pela sessão X, instalador
+  idempotente e CLI reconhecendo `systemctl --user`/`journalctl --user`.
+  Instalado e confirmado após reboot na VM Debian 13: serviço habilitado/ativo,
+  tela de espera em `IDLE` e `rios-launch status` com `ativo (usuário)`.
 - `--max-cycles` encerra sem aparelho; `status` mostra resolução/init da
   sessão; parser da CLI ignora ruído do `adb`.
 - `docs/OPERATOR.md`, `docs/TROUBLESHOOTING.md` e `docs/revisao-p2.md`.
-- Commits da revisão P2 no histórico local; nada enviado ao `origin` nesta
-  rodada.
+- Commits da M1-02 enviados para `origin/M1-02`.
 
 ---
 
@@ -47,10 +50,11 @@ Roteiro detalhado em [`revisao-p2.md`](revisao-p2.md) §5 e matriz em
 2. **Tela de espera e atalho Alt+T.**
    As mensagens existem no daemon, mas a instalação do visualizador/atalho na
    imagem ainda não foi feita.
-3. **Serviço e logs no Debian.**
-   Falta a unidade systemd e a rotação via `svlogd` (o M1 usa runit). A VM
-   desta rodada não tinha `rios-session.service`; por isso a CLI foi validada
-   em modo direto.
+3. **Instalação canônica e boot do serviço.**
+   Validado na VM Debian 13: `sudo scripts/install-runtime.sh --user rios`
+   instalou em `/usr/local`, habilitou a unidade de usuário e o reboot iniciou
+   o daemon com a sessão gráfica. Restam apenas a confirmação física no netbook
+   Void/runit, caso esse caminho seja retomado.
 4. **Presets `PROFILE`.**
    O `PLAN.md` prevê perfis de resolução/FPS; o daemon ainda não os aplica.
 5. **Checagem de versão do scrcpy.**
@@ -61,8 +65,8 @@ Roteiro detalhado em [`revisao-p2.md`](revisao-p2.md) §5 e matriz em
    O watchdog vê processo vivo, não pixels (limitação L1). Se a bancada mostrar
    travamento com processo de pé, será preciso capturar a janela (`xdotool`).
 7. **Testes faltantes.**
-   Sem cobertura para preset `PROFILE`, checagem de versão do scrcpy,
-   instalação/desinstalação do serviço e recuperação de log corrompido.
+   Sem cobertura para preset `PROFILE`, checagem de versão do scrcpy e
+   recuperação de log corrompido.
 
 ---
 
@@ -77,9 +81,11 @@ repositório não tem `.tex` nem `.bib`; o texto do artigo está fora dele.
 
 1. Bancada T3–T7 com a Larissa (desbloqueia as demais decisões).
 2. Corrigir o que a bancada revelar (L1/L2 e versão do scrcpy).
-3. Fechar o empacotamento P3: runtime + config na imagem, systemd, `svlogd`.
+3. Fechar o empacotamento P3: runtime + config na imagem e validação do boot
+   com systemd (journal + arquivo rotativo; `svlogd` não se aplica ao Debian).
 4. Escrever a Seção 3 do artigo com os resultados de T3–T7.
 5. Reavaliar presets `PROFILE` e completar os testes faltantes.
 
-> A repetição no Debian 13 (VM) já foi feita. O que ainda depende da VM é o
-> serviço systemd e a tela de espera na imagem, ambos do P3.
+> A repetição no Debian 13 (VM) já foi feita. O serviço systemd já está
+> implementado e testado; o que ainda depende da VM/hardware é a instalação
+> canônica em `/usr/local`, o boot com autologin e a tela de espera na imagem.

@@ -72,7 +72,7 @@ qual stack foi medida.
 | Fase | Conteúdo | Estado |
 |---|---|---|
 | M0 | Plano de desenvolvimento | ✅ [`PLAN.md`](PLAN.md) |
-| M1 | Daemon do kiosk rodando no Void/runit atual do netbook | 🔄 Em andamento — daemon/CLI validados com adb simulado no Mint e no Debian 13 (VM); falta o serviço de init e a bancada (M1-02) |
+| M1 | Daemon do kiosk e serviço de sessão na bancada | 🔄 Em andamento — daemon/CLI, unidade systemd de usuário e instalador validados na VM Debian 13 (**237 casos**); serviço confirmado após reboot, com o ambiente gráfico e a CLI; falta a bancada com o Galaxy |
 | M2 | Validação no aparelho real (DeX + teclado/trackpad) | ⬜ |
 | M3 | Build da imagem (`rios.img`) | ⬜ |
 | M4 | Live USB | ⬜ |
@@ -80,18 +80,30 @@ qual stack foi medida.
 | M6 | Calibração de performance + documentação | 🔄 Protocolo e script de coleta prontos (M6-01); faltam as medições |
 | M7 | Estabilização e release v1.0 | ⬜ |
 
+> **Por que a validação da M1 saiu do Void para a VM Debian 13?**
+> A entrega é **Debian/systemd/LXQt/SDDM** (DEC-01); o Void/runit é apenas o
+> sistema hoje instalado no netbook. Validar só no Void não exercitaria a unit
+> systemd, o `XAUTHORITY` temporário do SDDM nem o `journalctl --user` que a
+> imagem vai usar. A VM Debian 13 reproduz esse stack sem depender do Galaxy,
+> então a M1-02 foi validada lá. O caminho Void/runit continua documentado para
+> a bancada, mas deixou de ser o critério de aceite do serviço. O `adb` também
+> muda: a VM usa **34.0.5-debian** (pacote da trixie), não o 36.0.1 do Void; é
+> essa a versão que a imagem levará.
+
 ## Por onde começar
 
 1. Ler [`PLAN.md`](PLAN.md) — arquitetura, riscos, matriz de testes e roadmap.
-2. **M1**: implementar `runtime/rios-session` e rodar **no Void Linux que já está
-   instalado no netbook** (`xbps-install -S android-tools scrcpy`, serviço em `/etc/sv`).
+2. **M1**: implementar `runtime/rios-session` e validar na **VM Debian 13**
+   (stack da imagem) ou no Void já instalado no netbook. Na VM:
+   `sudo scripts/install-runtime.sh --user "$USER"`. No Void:
+   `xbps-install -S android-tools scrcpy` + serviço em `/etc/sv`.
    O ciclo de teste cai de horas (build de imagem) para minutos.
 3. **M2**: repetir com o celular conectado de verdade.
 
 ## Documentação de operação
 
 - [`docs/OPERATOR.md`](docs/OPERATOR.md) — uso diário, atalhos, configuração e
-  instalação na bancada (Void/runit).
+  instalação na bancada (Void/runit e VM Debian/systemd).
 - [`docs/protocolo-medicoes.md`](docs/protocolo-medicoes.md) — protocolo de medição de
   desempenho e energia (T11/T12): condições C0/C1, métricas, fases e o que invalida uma
   rodada. A coleta é feita por `scripts/coleta-desempenho.sh`, com saída em `docs/medicoes/`.
@@ -110,9 +122,11 @@ A suíte usa `adb` e `scrcpy` simulados e roda em qualquer Linux com Bash:
 tests/run-tests.sh
 ```
 
-Cobre config, máquina de estados, fallbacks A/B/C, estados de conexão, a CLI e a
-coleta de medições (`tests/test-coleta-desempenho.sh`).
-Os testes do daemon/CLI são **150 casos** e foram executados também na
+Cobre config, máquina de estados, fallbacks A/B/C, estados de conexão, a CLI, a
+coleta de medições (`tests/test-coleta-desempenho.sh`) e o serviço systemd
+(`tests/test-service.sh`: unidade, instalador, escopos da CLI e mocks de
+`systemctl`/`journalctl`/`sv`).
+Os testes do daemon/CLI/serviço são **237 casos** e foram executados também na
 **VM Debian 13** (systemd/LXQt), com `scrcpy` 5.0 real; o que depende do Galaxy
 está em [`tests/PENDING-HARDWARE.md`](tests/PENDING-HARDWARE.md).
 
