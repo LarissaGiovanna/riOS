@@ -55,7 +55,7 @@ tests/run-tests.sh
 ```
 
 Resultado da repetição no Debian (a suíte original no Mint tinha **141 casos**;
-os casos novos abaixo vieram desta rodada):
+os casos novos abaixo vieram das rodadas seguintes):
 
 | Arquivo de teste | Casos | Resultado no Debian 13 |
 |---|---:|---|
@@ -64,7 +64,9 @@ os casos novos abaixo vieram desta rodada):
 | `test-fallback.sh` | 29 | ✅ |
 | `test-device-states.sh` | 25 | ✅ |
 | `test-cli.sh` | 28 | ✅ |
-| **Total** | **150** | **✅ 0 falhas** |
+| `test-coleta-desempenho.sh` | 30 | ✅ |
+| `test-service.sh` | 57 | ✅ |
+| **Total** | **237** | **✅ 0 falhas** |
 
 Além da suíte, foram feitas execuções repetidas do teste de máquina de estados
 (10×) e três execuções completas da suíte na VM (≈17 s cada) para verificar se
