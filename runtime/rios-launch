@@ -233,27 +233,37 @@ cmd_status() {
     init="$status_init"
   fi
 
-  case "$scope" in
-    user)
-      if systemctl_svc user is-active --quiet "$SERVICE" 2>/dev/null; then
-        servico="ativo (usuário)"
+  case "$init" in
+    runit)
+      if command -v sv >/dev/null 2>&1 && sv status "$SERVICE" 2>/dev/null | grep -q '^run:'; then
+        servico="ativo (runit)"
       else
         servico="parado"
       fi
       ;;
-    system)
-      if systemctl_svc system is-active --quiet "$SERVICE" 2>/dev/null; then
-        servico="ativo (sistema)"
-      else
-        servico="parado"
-      fi
+    direct)
+      servico="—"
       ;;
     *)
-      if [[ "$init" == "direct" ]]; then
-        servico="—"
-      else
-        servico="não instalado"
-      fi
+      case "$scope" in
+        user)
+          if systemctl_svc user is-active --quiet "$SERVICE" 2>/dev/null; then
+            servico="ativo (usuário)"
+          else
+            servico="parado"
+          fi
+          ;;
+        system)
+          if systemctl_svc system is-active --quiet "$SERVICE" 2>/dev/null; then
+            servico="ativo (sistema)"
+          else
+            servico="parado"
+          fi
+          ;;
+        *)
+          servico="não instalado"
+          ;;
+      esac
       ;;
   esac
 

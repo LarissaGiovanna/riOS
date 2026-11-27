@@ -45,6 +45,7 @@ printf 'test-service\n'
 export PATH="${ROOT}/tests/mock:${PATH}"
 export MOCK_SYSTEMCTL_LOG="$TMP/systemctl.log"
 export MOCK_JOURNAL_LOG="$TMP/journalctl.log"
+export MOCK_SV_LOG="$TMP/sv.log"
 export MOCK_SYSTEMCTL_ACTIVE=1
 export MOCK_SYSTEMCTL_UNIT=both
 
@@ -221,6 +222,25 @@ else
   bad "status sem unidade falhou"
 fi
 check_contains "$TMP/status-none.out" 'Serviço........: não instalado' "status informa unidade ausente"
+
+: >"$MOCK_SV_LOG"
+if MOCK_SV_ACTIVE=1 RIOS_INIT=runit RIOS_SERVICE_SCOPE=none \
+        "$LAUNCH" status >"$TMP/status-runit.out" 2>&1; then
+  ok "status runit ativo termina com 0"
+else
+  bad "status runit ativo falhou"
+fi
+check_contains "$TMP/status-runit.out" 'Init...........: runit' "status mostra init=runit"
+check_contains "$TMP/status-runit.out" 'Serviço........: ativo (runit)' "status mostra serviço runit ativo"
+check_contains "$MOCK_SV_LOG" 'status rios-session' "status consulta sv status"
+
+if MOCK_SV_ACTIVE=0 RIOS_INIT=runit RIOS_SERVICE_SCOPE=none \
+        "$LAUNCH" status >"$TMP/status-runit-off.out" 2>&1; then
+  ok "status runit parado termina com 0"
+else
+  bad "status runit parado falhou"
+fi
+check_contains "$TMP/status-runit-off.out" 'Serviço........: parado' "status mostra serviço runit parado"
 
 printf '\n%d ok, %d falha(s)\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))
